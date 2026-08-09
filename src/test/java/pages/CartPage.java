@@ -111,13 +111,23 @@ public class CartPage extends BasePage {
         List<CartItem> cartItems = getCartItems();
         Assertions.assertFalse(cartItems.isEmpty(), "Cart is empty, cannot validate product consistency!");
 
-        String firstProduct = cartItems.get(0).getProductName().replaceAll("(?i)(hard|soft|glass)", "").trim();
+        String referenceName = baseProductName != null && !baseProductName.isEmpty() 
+                ? baseProductName 
+                : cartItems.get(0).getProductName();
+        
+        String cleanReference = referenceName.replaceAll("(?i)(hard|soft|glass|case|cover|back cover)", "").trim().toLowerCase();
 
-        for (int i = 1; i < cartItems.size(); i++) {
-            String currentProduct = cartItems.get(i).getProductName().replaceAll("(?i)(hard|soft|glass)", "").trim();
-            // Validate similarity between parent product names
-            Assertions.assertTrue(firstProduct.contains(currentProduct) || currentProduct.contains(firstProduct) || currentProduct.length() > 0,
-                    "Cart contains items from different products! Item 1: " + firstProduct + ", Item " + (i + 1) + ": " + currentProduct);
+        for (int i = 0; i < cartItems.size(); i++) {
+            String itemProductName = cartItems.get(i).getProductName();
+            String cleanItem = itemProductName.replaceAll("(?i)(hard|soft|glass|case|cover|back cover)", "").trim().toLowerCase();
+            
+            System.out.println("DEBUG: Validating Cart Item " + (i + 1) + ": '" + itemProductName + "' against reference: '" + referenceName + "'");
+            
+            boolean matches = cleanReference.contains(cleanItem) || cleanItem.contains(cleanReference) 
+                    || itemProductName.toLowerCase().contains(cleanReference);
+            
+            Assertions.assertTrue(matches,
+                    "Cart item '" + itemProductName + "' does not belong to parent product '" + referenceName + "'!");
         }
     }
 

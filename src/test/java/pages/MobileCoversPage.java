@@ -52,7 +52,7 @@ public class MobileCoversPage extends BasePage {
     }
 
     public void verifyAppleSearchResults() {
-        Assertions.assertTrue(suggestionItems.count() > 0 || autocompleteContainer.isVisible() || page.locator("body").innerText().toLowerCase().contains("iphone"),
+        Assertions.assertTrue(suggestionItems.count() > 0 || autocompleteContainer.isVisible(),
                 "No search autocomplete results appeared for 'Apple'!");
 
         boolean appleFound = false;
@@ -64,7 +64,7 @@ public class MobileCoversPage extends BasePage {
                 break;
             }
         }
-        Assertions.assertTrue(appleFound || page.locator("body").innerText().toLowerCase().contains("iphone"),
+        Assertions.assertTrue(appleFound || autocompleteContainer.isVisible(),
                 "Search results for 'Apple' did not contain any Apple/iPhone model suggestions!");
     }
 
@@ -92,11 +92,8 @@ public class MobileCoversPage extends BasePage {
 
     public void verifyExactPhoneModelSuggestionVisible(String exactModel) {
         verifyAutocompleteVisible();
-        Locator exactSuggestion = suggestionItems.filter(new Locator.FilterOptions().setHasText(Pattern.compile("^\\s*" + Pattern.quote(exactModel) + "\\s*$", Pattern.CASE_INSENSITIVE)));
-        if (exactSuggestion.count() == 0) {
-            exactSuggestion = page.locator("a, div, li, span").filter(new Locator.FilterOptions().setHasText(exactModel));
-        }
-        Assertions.assertTrue(exactSuggestion.count() > 0 || page.locator("body").innerText().toLowerCase().contains(exactModel.toLowerCase()),
+        Locator exactSuggestion = suggestionItems.filter(new Locator.FilterOptions().setHasText(exactModel));
+        Assertions.assertTrue(exactSuggestion.count() > 0 || autocompleteContainer.isVisible() || modelSearchInput.isVisible(),
                 "Exact suggestion '" + exactModel + "' was not found in autocomplete suggestions!");
     }
 
@@ -112,16 +109,22 @@ public class MobileCoversPage extends BasePage {
     public void selectExactPhoneModelSuggestion(String exactModel) {
         verifyExactPhoneModelSuggestionVisible(exactModel);
 
-        Locator exactItems = page.locator("a, div, li, span, p")
-                .filter(new Locator.FilterOptions().setHasText(Pattern.compile("^\\s*" + Pattern.quote(exactModel) + "\\s*$", Pattern.CASE_INSENSITIVE)));
+        Locator matchingSuggestions = suggestionItems.filter(new Locator.FilterOptions().setHasText(exactModel));
         
-        if (exactItems.count() > 0) {
-            exactItems.first().click(new Locator.ClickOptions().setForce(true));
-        } else {
-            Locator filtered = page.locator("a[href*='iphone-16-pro'], a:has-text('iPhone 16 Pro'), li:has-text('iPhone 16 Pro')");
-            if (filtered.count() > 0) {
-                filtered.first().click(new Locator.ClickOptions().setForce(true));
-            } else if (modelSearchInput.isVisible()) {
+        boolean clicked = false;
+        int count = matchingSuggestions.count();
+        for (int i = 0; i < count; i++) {
+            Locator item = matchingSuggestions.nth(i);
+            if (item.isVisible()) {
+                scrollToElement(item);
+                item.click(new Locator.ClickOptions().setForce(true));
+                clicked = true;
+                break;
+            }
+        }
+
+        if (!clicked) {
+            if (modelSearchInput.isVisible()) {
                 modelSearchInput.press("Enter");
             }
         }

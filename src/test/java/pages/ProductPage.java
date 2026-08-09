@@ -4,6 +4,8 @@ import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import org.junit.jupiter.api.Assertions;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Pattern;
 
 public class ProductPage extends BasePage {
@@ -17,7 +19,7 @@ public class ProductPage extends BasePage {
 
     public ProductPage(Page page) {
         super(page);
-        this.productCards = page.locator(".product-card, .grid__item, .product-item, .card, [class*='product-grid'] > div, [class*='product-card'], div[data-product-id], a[href*='/products/']");
+        this.productCards = page.locator(".product-card, .grid__item, .product-item, .card, [class*='product-grid'] > div, [class*='product-card'], div[data-product-id]");
         this.productLinks = page.locator("a[href*='/products/'], .card__heading a, .product-card__title a, a.full-width-link, .grid-product__link");
         this.addToCartBtn = page.locator("button[name='add'], button:has-text('Add to Cart'), .product-form__submit, button:has-text('ADD TO CART')").first();
     }
@@ -26,7 +28,6 @@ public class ProductPage extends BasePage {
         Locator popupCloseBtns = page.locator("button[aria-label='Close'], .overlay-close, .modal__close, button:has-text('Close'), .popup-close, .newsletter-popup__close");
         if (popupCloseBtns.count() > 0 && popupCloseBtns.first().isVisible()) {
             popupCloseBtns.first().click(new Locator.ClickOptions().setForce(true));
-            page.waitForTimeout(300);
         }
     }
 
@@ -44,44 +45,89 @@ public class ProductPage extends BasePage {
     }
 
     public void clickFirstProductChooseOptions() {
+        selectFirstEligibleProductWithAllMaterials(List.of("Hard", "Soft", "Glass"));
+    }
+
+    public void selectFirstEligibleProductWithAllMaterials(List<String> requiredMaterials) {
         verifyAtLeastOneProductCardVisible();
         closePopupsIfPresent();
 
-        if (!page.url().contains("/products/")) {
-            System.out.println("DEBUG: On collection/search page (" + page.url() + "). Locating first product card with Choose Options...");
-            
-            Locator cardsWithOptions = page.locator(".product-card, .grid__item, .card")
-                    .filter(new Locator.FilterOptions().setHas(page.locator("button:has-text('Choose Options'), a:has-text('Choose Options'), .product-card__btn")));
+        String searchResultsUrl = page.url();
+        System.out.println("DEBUG: Results page URL: " + searchResultsUrl);
 
-            if (cardsWithOptions.count() > 0 && cardsWithOptions.first().isVisible()) {
-                Locator btn = cardsWithOptions.first().locator("button:has-text('Choose Options'), a:has-text('Choose Options'), .product-card__btn").first();
-                scrollToElement(btn);
-                btn.click(new Locator.ClickOptions().setForce(true));
-            } else {
-                Locator targetLinks = page.locator("a[href*='/products/']");
-                if (targetLinks.count() > 0) {
-                    Locator firstTarget = targetLinks.first();
-                    scrollToElement(firstTarget);
-                    capturedProductName = firstTarget.innerText().trim();
-                    firstTarget.click(new Locator.ClickOptions().setForce(true));
+        Locator cardLinks = page.locator("a[href*='/products/'], .card__heading a, .product-card__title a");
+        int count = cardLinks.count();
+        List<String> candidateUrls = new ArrayList<>();
+
+        for (int i = 0; i < count; i++) {
+            String href = cardLinks.nth(i).getAttribute("href");
+            if (href != null && href.contains("/products/")) {
+                String fullUrl = href.startsWith("http") ? href : "https://casekaro.com" + href;
+                String baseUrl = fullUrl.split("\\?")[0];
+                if (!candidateUrls.contains(baseUrl)) {
+                    candidateUrls.add(fullUrl);
                 }
             }
+        }
+
+        int maxCandidates = Math.min(candidateUrls.size(), 10);
+        Assertions.assertTrue(maxCandidates > 0, "No product card links found on product listing page!");
+
+        boolean foundEligibleProduct = false;
+
+        for (int i = 0; i < maxCandidates; i++) {
+            String candidateUrl = candidateUrls.get(i);
+            page.navigate(candidateUrl);
             page.waitForLoadState();
+            closePopupsIfPresent();
+
+            Locator h1 = page.locator("h1, .product__title, .card__heading, .product-title").first();
+            String candidateTitle = (h1.count() > 0 && h1.isVisible()) ? h1.innerText().trim() : candidateUrl;
+
+            List<String> missingMaterials = new ArrayList<>();
+            for (String material : requiredMaterials) {
+                if (!isMaterialVariantAvailableOnPDP(material)) {
+                    missingMaterials.add(material);
+                }
+            }
+
+            if (missingMaterials.isEmpty()) {
+                System.out.println("Candidate " + (i + 1) + ": " + candidateTitle + " -> " + String.join("/", requiredMaterials) + " all present, selected");
+                capturedProductName = candidateTitle;
+                foundEligibleProduct = true;
+                break;
+            } else {
+                System.out.println("Candidate " + (i + 1) + ": " + candidateTitle + " -> missing " + String.join(", ", missingMaterials) + ", trying next");
+                page.navigate(searchResultsUrl);
+                page.waitForLoadState();
+            }
         }
 
-        closePopupsIfPresent();
-        Locator h1 = page.locator("h1, .product__title, .card__heading").first();
-        if (h1.count() > 0 && h1.isVisible()) {
-            capturedProductName = h1.innerText().trim();
-        }
+        Assertions.assertTrue(foundEligibleProduct,
+                "No product among the first " + maxCandidates + " results exposes " + String.join(", ", requiredMaterials) + " variants!");
 
-        System.out.println("DEBUG: Product Detail Page loaded: " + page.url() + " Title: " + capturedProductName);
         logProductOptions();
+    }
+
+    public boolean isMaterialVariantAvailableOnPDP(String material) {
+        closePopupsIfPresent();
+        Locator variantOptions = page.locator(".product-form, form[action*='/cart/add'], fieldset, [class*='variant'], .product-single__options, .product__options")
+                .locator("label, button, input + label, select option, span.variant-option, fieldset label")
+                .filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*" + Pattern.quote(material) + ".*", Pattern.CASE_INSENSITIVE)));
+        
+        if (variantOptions.count() == 0) {
+            variantOptions = page.locator("main, #MainContent, .product")
+                    .locator("label, button, input + label, fieldset label")
+                    .filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*" + Pattern.quote(material) + ".*", Pattern.CASE_INSENSITIVE)));
+        }
+
+        return variantOptions.count() > 0;
     }
 
     private void logProductOptions() {
         System.out.println("=== DEBUG: VISIBLE BUTTONS / LABELS / OPTIONS ON PRODUCT PAGE ===");
-        Locator options = page.locator("label, button, select option, fieldset label, input[name*='Material'] + label, div[class*='variant']");
+        Locator options = page.locator(".product-form, form[action*='/cart/add'], fieldset, [class*='variant']")
+                .locator("label, button, select option, input + label");
         for (int i = 0; i < Math.min(options.count(), 30); i++) {
             if (options.nth(i).isVisible()) {
                 System.out.println("Opt [" + i + "]: " + options.nth(i).innerText().replaceAll("\\s+", " "));
@@ -95,39 +141,37 @@ public class ProductPage extends BasePage {
 
     public void verifyMaterialAvailable(String material) {
         closePopupsIfPresent();
-        Locator materialOptions = page.locator("label, button, span, option, input, div, a")
-                .filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*" + Pattern.quote(material) + ".*", Pattern.CASE_INSENSITIVE)));
-        
-        boolean found = materialOptions.count() > 0 || page.locator("body").innerText().toLowerCase().contains(material.toLowerCase());
-        Assertions.assertTrue(found, "Material variant '" + material + "' is not available for this product!");
+        Assertions.assertTrue(isMaterialVariantAvailableOnPDP(material),
+                "Material variant '" + material + "' is not available for this product!");
     }
 
     public void selectMaterial(String material) {
         verifyMaterialAvailable(material);
         closePopupsIfPresent();
 
-        Locator materialOption = page.locator("label, button, input + label, span, div")
+        Locator materialOption = page.locator(".product-form, form[action*='/cart/add'], fieldset, [class*='variant']")
+                .locator("label, button, input + label, span")
                 .filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*" + Pattern.quote(material) + ".*", Pattern.CASE_INSENSITIVE)));
         
-        if (materialOption.count() > 0 && materialOption.first().isVisible()) {
-            materialOption.first().click(new Locator.ClickOptions().setForce(true));
-        } else if (materialOption.count() > 0) {
+        if (materialOption.count() > 0) {
             materialOption.first().click(new Locator.ClickOptions().setForce(true));
         } else {
-            page.locator("label, button, a").filter(new Locator.FilterOptions().setHasText(material)).first().click(new Locator.ClickOptions().setForce(true));
+            page.locator("label, button").filter(new Locator.FilterOptions().setHasText(material)).first().click(new Locator.ClickOptions().setForce(true));
         }
-        page.waitForTimeout(500);
+        page.waitForLoadState();
     }
 
     public void verifyMaterialSelected(String material) {
-        Locator selectedOption = page.locator("label.selected, label[data-selected='true'], input:checked + label, button.active, label:has(input:checked), [aria-selected='true']")
+        closePopupsIfPresent();
+        Locator selectedOption = page.locator("label.selected, label[data-selected='true'], input:checked + label, button.active, label:has(input:checked), [aria-selected='true'], [class*='selected']")
                 .filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*" + Pattern.quote(material) + ".*", Pattern.CASE_INSENSITIVE)));
+        
         if (selectedOption.count() == 0) {
-            selectedOption = page.locator("label, button, span, div")
+            selectedOption = page.locator(".product-form, form[action*='/cart/add'], fieldset, [class*='variant']")
+                    .locator("label, button, input + label")
                     .filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*" + Pattern.quote(material) + ".*", Pattern.CASE_INSENSITIVE)));
         }
-        boolean isSelectedOrPresent = selectedOption.count() > 0 || page.locator("body").innerText().toLowerCase().contains(material.toLowerCase());
-        Assertions.assertTrue(isSelectedOrPresent, "Material variant '" + material + "' is not in selected state!");
+        Assertions.assertTrue(selectedOption.count() > 0, "Material variant '" + material + "' is not in selected state!");
     }
 
     public void addSelectedMaterialToCart() {
@@ -135,14 +179,15 @@ public class ProductPage extends BasePage {
         waitForVisible(addToCartBtn);
         Assertions.assertTrue(addToCartBtn.isVisible() && addToCartBtn.isEnabled(), "Add to Cart button is not interactable!");
         addToCartBtn.click(new Locator.ClickOptions().setForce(true));
-        page.waitForTimeout(1500);
+        page.waitForLoadState();
     }
 
     public void closeCartDrawerIfOpen() {
         Locator closeBtn = page.locator(".cart-drawer__close, .drawer__close, button[aria-label*='Close'], .js-drawer-close, [aria-label*='close']").first();
         if (closeBtn.count() > 0 && closeBtn.isVisible()) {
             closeBtn.click(new Locator.ClickOptions().setForce(true));
-            page.waitForTimeout(500);
+            page.waitForLoadState();
         }
     }
 }
+
