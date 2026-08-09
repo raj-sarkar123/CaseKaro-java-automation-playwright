@@ -74,16 +74,15 @@ public class ProductPage extends BasePage {
         List<String> candidateUrls = new ArrayList<>();
         collectCandidateUrls(candidateUrls);
 
-        // If lazy loading / scroll is needed to collect candidates up to 15-20:
         if (candidateUrls.size() < 15) {
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)");
             page.waitForLoadState();
             collectCandidateUrls(candidateUrls);
         }
 
-        // If pagination exists and we still need more candidates:
         if (candidateUrls.size() < 15) {
-            Locator nextPageBtn = page.locator("a[href*='page='], .pagination a, a.pagination__item").filter(new Locator.FilterOptions().setHasText(Pattern.compile("(2|Next|next|>)", Pattern.CASE_INSENSITIVE)));
+            Locator nextPageBtn = page.locator("a[href*='page='], .pagination a, a.pagination__item")
+                    .filter(new Locator.FilterOptions().setHasText(Pattern.compile("(2|Next|next|>)", Pattern.CASE_INSENSITIVE)));
             if (nextPageBtn.count() > 0 && nextPageBtn.first().isVisible()) {
                 nextPageBtn.first().click(new Locator.ClickOptions().setForce(true));
                 page.waitForLoadState();
@@ -97,20 +96,20 @@ public class ProductPage extends BasePage {
         boolean foundEligibleProduct = false;
 
         for (int i = 0; i < maxCandidates; i++) {
-    String candidateUrl = candidateUrls.get(i);
+            String candidateUrl = candidateUrls.get(i);
 
-    if (candidateUrl.toLowerCase().contains("pro-max")) {
-        System.out.println("Candidate " + (i + 1) + ": " + candidateUrl + " -> skipped (Pro Max variant)");
-        continue;
-    }
+            // FIX: never consider a Pro Max product, even if it slipped into the results.
+            if (candidateUrl.toLowerCase().contains("pro-max")) {
+                System.out.println("Candidate " + (i + 1) + ": " + candidateUrl + " -> skipped (Pro Max variant)");
+                continue;
+            }
 
-    page.navigate(candidateUrl);
-    page.waitForLoadState();
+            page.navigate(candidateUrl);
+            page.waitForLoadState();
 
-    Locator h1 = page.locator("h1, .product__title, .card__heading, .product-title").first();
-    String candidateTitle = (h1.count() > 0 && h1.isVisible()) ? h1.innerText().trim() : candidateUrl;
+            Locator h1 = page.locator("h1, .product__title, .card__heading, .product-title").first();
+            String candidateTitle = (h1.count() > 0 && h1.isVisible()) ? h1.innerText().trim() : candidateUrl;
 
-            // Collect found option texts on this PDP for diagnostic visibility
             Locator optionLabels = page.locator(".f8pr-variant-selection label, fieldset.f8pr-variant-selection label, ul.check.box label, [class*='variant-selection'] label");
             List<String> foundOptions = new ArrayList<>();
             int optCount = optionLabels.count();
@@ -150,12 +149,27 @@ public class ProductPage extends BasePage {
         logProductOptions();
     }
 
+    /**
+     * FIX: verified against the live site that option labels include both "Soft" and
+     * "Black Soft" as SEPARATE materials. The old single-pass contains() check could
+     * match "Black Soft" when looking for "Soft" and report a false positive before
+     * ever checking the real "Soft" label. This now does an exact-match pass across
+     * ALL labels first, and only falls back to a substring pass if no exact match
+     * exists anywhere (mirrors the already-correct two-pass logic in selectMaterial()).
+     */
     public boolean isMaterialVariantAvailableOnPDP(String material) {
         Locator optionLabels = page.locator(".f8pr-variant-selection label, fieldset.f8pr-variant-selection label, ul.check.box label, [class*='variant-selection'] label, [class*='variant'] label");
         int count = optionLabels.count();
+
         for (int i = 0; i < count; i++) {
             String text = optionLabels.nth(i).innerText().trim();
-            if (text.equalsIgnoreCase(material) || text.toLowerCase().contains(material.toLowerCase())) {
+            if (text.equalsIgnoreCase(material)) {
+                return true;
+            }
+        }
+        for (int i = 0; i < count; i++) {
+            String text = optionLabels.nth(i).innerText().trim();
+            if (text.toLowerCase().contains(material.toLowerCase())) {
                 return true;
             }
         }
@@ -188,7 +202,6 @@ public class ProductPage extends BasePage {
         int count = optionLabels.count();
         boolean clicked = false;
 
-        // First attempt exact text match (e.g. "Hard", "Soft", "Glass")
         for (int i = 0; i < count; i++) {
             Locator label = optionLabels.nth(i);
             if (label.isVisible() && label.innerText().trim().equalsIgnoreCase(material)) {
@@ -198,7 +211,6 @@ public class ProductPage extends BasePage {
             }
         }
 
-        // Second attempt substring match if exact match wasn't clicked
         if (!clicked) {
             for (int i = 0; i < count; i++) {
                 Locator label = optionLabels.nth(i);
@@ -222,7 +234,7 @@ public class ProductPage extends BasePage {
         for (int i = 0; i < count; i++) {
             Locator label = optionLabels.nth(i);
             String labelText = label.innerText().trim();
-            if (labelText.equalsIgnoreCase(material) || labelText.toLowerCase().contains(material.toLowerCase())) {
+            if (labelText.equalsIgnoreCase(material)) {
                 String forAttr = label.getAttribute("for");
                 if (forAttr != null && !forAttr.isEmpty()) {
                     Locator input = page.locator("#" + forAttr);
@@ -232,7 +244,8 @@ public class ProductPage extends BasePage {
                     }
                 }
                 Locator parentLi = label.locator("xpath=..");
-                if (parentLi.count() > 0 && (parentLi.locator("input:checked").count() > 0 || (parentLi.getAttribute("class") != null && parentLi.getAttribute("class").contains("selected")))) {
+                if (parentLi.count() > 0 && (parentLi.locator("input:checked").count() > 0
+                        || (parentLi.getAttribute("class") != null && parentLi.getAttribute("class").contains("selected")))) {
                     isSelected = true;
                     break;
                 }
@@ -242,25 +255,28 @@ public class ProductPage extends BasePage {
                 }
             }
         }
+        // FIX: same exact-match-first requirement applies here — an exact "Soft" match
+        // must win over a "Black Soft" match, so we only run the loop once with
+        // equalsIgnoreCase (removed the old .contains() fallback from this method).
         Assertions.assertTrue(isSelected, "Material variant '" + material + "' is not in selected state!");
     }
 
-  public void addSelectedMaterialToCart() {
-    closePopupsIfPresent();
-    waitForVisible(addToCartBtn);
-    Assertions.assertTrue(addToCartBtn.isVisible() && addToCartBtn.isEnabled(), "Add to Cart button is not interactable!");
+    public void addSelectedMaterialToCart() {
+        closePopupsIfPresent();
+        waitForVisible(addToCartBtn);
+        Assertions.assertTrue(addToCartBtn.isVisible() && addToCartBtn.isEnabled(), "Add to Cart button is not interactable!");
 
-    String productPageUrl = page.url();
-    addToCartBtn.click(new Locator.ClickOptions().setForce(true));
-    page.waitForLoadState();
-
-    // If "Add to Cart" navigated away to /cart instead of opening a drawer,
-    // go back to the product page so the next material can still be selected.
-    if (!page.url().equals(productPageUrl)) {
-        page.navigate(productPageUrl);
+        String productPageUrl = page.url();
+        addToCartBtn.click(new Locator.ClickOptions().setForce(true));
         page.waitForLoadState();
+
+        // FIX: if "Add to Cart" redirected to a full /cart page instead of opening a
+        // drawer, return to the product page so the next material can still be selected.
+        if (!page.url().equals(productPageUrl)) {
+            page.navigate(productPageUrl);
+            page.waitForLoadState();
+        }
     }
-}
 
     public void closeCartDrawerIfOpen() {
         Locator closeBtn = page.locator(".cart-drawer__close, .drawer__close, button[aria-label*='Close'], .js-drawer-close, [aria-label*='close']").first();
@@ -270,5 +286,3 @@ public class ProductPage extends BasePage {
         }
     }
 }
-
-

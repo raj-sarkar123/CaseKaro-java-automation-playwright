@@ -9,7 +9,6 @@ import java.util.regex.Pattern;
 
 public class MobileCoversPage extends BasePage {
 
-    // Locators
     private final Locator pageHeading;
     private final Locator modelSearchInput;
     private final Locator autocompleteContainer;
@@ -19,14 +18,28 @@ public class MobileCoversPage extends BasePage {
         super(page);
         this.pageHeading = page.locator("h1, h2, .page-title, [class*='title']").filter(new Locator.FilterOptions()
                 .setHasText(Pattern.compile("(Mobile Covers|Phone cases)", Pattern.CASE_INSENSITIVE))).first();
+
+        // Confirmed via live DEBUG run: real input is #search_main.
         this.modelSearchInput = page.locator(
-                "#search-bar-cover-page, #search_main, input[placeholder*='Search phone model'], input[placeholder*='search'], input[placeholder*='Search'], input[type='search']")
+                "#search_main, #search-bar-cover-page, input[placeholder*='Search phone model'], input[placeholder*='search'], input[placeholder*='Search'], input[type='search']")
                 .first();
+
         this.autocompleteContainer = page.locator(
-                ".autocomplete-suggestions, .search-results, .suggestions, [class*='suggestion'], [class*='search-result'], ul.results, div.results, .search__results, .predictive-search")
+                ".autocomplete-suggestions, .search-results, .suggestions, [class*='suggestion'], [class*='search-result'], ul.results, div.results, .search__results, .predictive-search, [role='listbox']")
                 .first();
+
+        // Confirmed via live DEBUG run: the site has no dedicated dropdown/container
+        // class we can target ("best-guess results container: NOT FOUND"), so this
+        // stays broad on purpose. It WILL also catch header-nav and footer links whose
+        // href happens to contain "iphone" (confirmed: indices 10, 55-59 in the live
+        // dump were the header "iPhone" nav link and footer "Most searched" links, not
+        // real suggestions). That noise is filtered out in isRealSuggestion() below,
+        // rather than trying to guess a cleaner selector we can't verify.
         this.suggestionItems = page.locator(
-                ".autocomplete-suggestion, .search-result-item, .suggestion-item, [class*='suggestion-item'], ul.results li, div.results a, .search__results-item, a[href*='iphone'], [class*='predictive-search'] li, div[role='option'], .predictive-search__item, .predictive-search a, a[href*='search?q=']");
+                ".autocomplete-suggestion, .search-result-item, .suggestion-item, [class*='suggestion-item'], " +
+                "ul.results li, div.results a, .search__results-item, a[href*='iphone'], " +
+                "[class*='predictive-search'] li, div[role='option'], .predictive-search__item, " +
+                ".predictive-search a, a[href*='search?q=']");
     }
 
     public void verifyMobileCoversPageLoaded() {
@@ -53,10 +66,20 @@ public class MobileCoversPage extends BasePage {
         modelSearchInput.pressSequentially(brandOrModel,
                 new Locator.PressSequentiallyOptions().setDelay(120));
 
-        // Wait for the actual suggestion items to render, not just page load state
         suggestionItems.first().waitFor(new Locator.WaitForOptions()
                 .setState(com.microsoft.playwright.options.WaitForSelectorState.VISIBLE)
                 .setTimeout(10000));
+
+        // Let the debounced results settle so subsequent reads see the final list.
+        int previousCount = -1;
+        for (int attempt = 0; attempt < 10; attempt++) {
+            int currentCount = suggestionItems.count();
+            if (currentCount == previousCount && currentCount > 0) {
+                break;
+            }
+            previousCount = currentCount;
+            page.waitForTimeout(300);
+        }
     }
 
     public void clearPhoneModelSearch() {
@@ -106,44 +129,76 @@ public class MobileCoversPage extends BasePage {
                 "Autocomplete dropdown is not visible for search query!");
     }
 
-    public void verifyExactPhoneModelSuggestionVisible(String exactModel) {
-        verifyAutocompleteVisible();
-        Locator exactSuggestion = page.locator(
-                ".predictive-search, .autocomplete-suggestions, .search-results, [class*='suggestion'], [class*='predictive-search']")
-                .locator("li, a, div, span, p")
-                .filter(new Locator.FilterOptions().setHasText(
-                        Pattern.compile(".*" + Pattern.quote(exactModel) + ".*", Pattern.CASE_INSENSITIVE)));
+    /**
+     * Returns the index into suggestionItems of the first visible, non-nav/footer
+     * item whose normalized text matches targetText — exact match if exactMatch is
+     * true, substring match otherwise. Returns -1 if nothing matches.
+     *
+     * Matching is done in Java against a whitespace-collapsed String rather than via
+     * Playwright's hasText(regex), because a raw-DOM regex silently fails when the
+     * real markup splits the text across nodes (e.g. highlighting spans) — confirmed
+     * this was happening via a live DEBUG run against the real site.
+     */
+    private int findSuggestionIndexByText(String targetText, boolean exactMatch) {
+        int count = suggestionItems.count();
+        for (int i = 0; i < count; i++) {
+            Locator item = suggestionItems.nth(i);
+            if (!item.isVisible()) continue;
 
-        if (exactSuggestion.count() == 0) {
-            exactSuggestion = suggestionItems.filter(new Locator.FilterOptions()
-                    .setHasText(Pattern.compile(".*" + Pattern.quote(exactModel) + ".*", Pattern.CASE_INSENSITIVE)));
+            Object insideChrome = item.evaluate("el => !!el.closest('header, nav, footer')");
+            if (Boolean.TRUE.equals(insideChrome)) continue;
+
+            String text = item.innerText().replaceAll("\\s+", " ").trim();
+            if (exactMatch) {
+                if (text.equalsIgnoreCase(targetText)) return i;
+            } else {
+                if (text.toLowerCase().contains(targetText.toLowerCase())) return i;
+            }
         }
-        Assertions.assertTrue(exactSuggestion.count() > 0 || autocompleteContainer.isVisible(),
-                "Exact suggestion '" + exactModel + "' was not found in autocomplete suggestions!");
+        return -1;
     }
 
-   public void verifyPhoneModelMaxNotSelected(String unexpectedModel) {
-    // Check what is CURRENTLY selected/loaded, not just what's in the dropdown list.
-    String currentUrl = page.url();
-    String pageHeading = page.locator("h1, .page-title").first().count() > 0
-            ? page.locator("h1, .page-title").first().innerText().trim()
-            : "";
+    public void verifyExactPhoneModelSuggestionVisible(String exactModel) {
+        verifyAutocompleteVisible();
 
-    boolean maxWasSelected = currentUrl.toLowerCase().contains("pro-max")
-            || pageHeading.equalsIgnoreCase(unexpectedModel);
+        int idx = findSuggestionIndexByText(exactModel, false);
 
-    Assertions.assertFalse(maxWasSelected,
-            "Validation Error: 'iPhone 16 Pro Max' was selected instead of 'iPhone 16 Pro'! URL: " + currentUrl);
-}
+        if (idx == -1) {
+            System.out.println("=== DEBUG: real (non-nav/footer) suggestions currently visible ===");
+            int count = suggestionItems.count();
+            for (int i = 0; i < count; i++) {
+                Locator item = suggestionItems.nth(i);
+                if (!item.isVisible()) continue;
+                Object insideChrome = item.evaluate("el => !!el.closest('header, nav, footer')");
+                if (Boolean.TRUE.equals(insideChrome)) continue;
+                System.out.println("  [" + i + "] " + item.innerText().replaceAll("\\s+", " ").trim());
+            }
+        }
 
-   public void selectExactPhoneModelSuggestion(String exactModel) {
-    Locator exactSuggestion = suggestionItems.filter(new Locator.FilterOptions()
-            .setHasText(Pattern.compile("^\\s*" + Pattern.quote(exactModel) + "\\s*$", Pattern.CASE_INSENSITIVE)));
+        Assertions.assertTrue(idx != -1,
+                "Exact suggestion '" + exactModel + "' was not found among real (non-navigation) suggestions!");
+    }
 
-    Assertions.assertTrue(exactSuggestion.count() > 0,
-            "Exact suggestion '" + exactModel + "' was not found in the autocomplete dropdown!");
+    public void verifyPhoneModelMaxNotSelected(String unexpectedModel) {
+        String currentUrl = page.url();
+        String pageHeadingText = page.locator("h1, .page-title").first().count() > 0
+                ? page.locator("h1, .page-title").first().innerText().trim()
+                : "";
 
-    exactSuggestion.first().click(new Locator.ClickOptions().setForce(true));
-    page.waitForLoadState();
-}
+        boolean maxWasSelected = currentUrl.toLowerCase().contains("pro-max")
+                || pageHeadingText.equalsIgnoreCase(unexpectedModel);
+
+        Assertions.assertFalse(maxWasSelected,
+                "Validation Error: 'iPhone 16 Pro Max' was selected instead of 'iPhone 16 Pro'! URL: " + currentUrl);
+    }
+
+    public void selectExactPhoneModelSuggestion(String exactModel) {
+        int idx = findSuggestionIndexByText(exactModel, true);
+
+        Assertions.assertTrue(idx != -1,
+                "Exact suggestion '" + exactModel + "' was not found among real (non-navigation) suggestions!");
+
+        suggestionItems.nth(idx).click(new Locator.ClickOptions().setForce(true));
+        page.waitForLoadState();
+    }
 }

@@ -11,7 +11,6 @@ import java.util.regex.Pattern;
 
 public class CartPage extends BasePage {
 
-    // Locators
     private final Locator cartIconBtn;
     private final Locator cartContainer;
     private final Locator cartItemRows;
@@ -64,39 +63,40 @@ public class CartPage extends BasePage {
         for (int i = 0; i < count; i++) {
             Locator itemRow = cartItemRows.nth(i);
 
-            // Extract Product Name
             String productName = "Unknown Product";
             Locator nameLocator = itemRow.locator(".cart-item__name, .product-title, a[href*='/products/'], .cart-item__title").first();
             if (nameLocator.count() > 0) {
                 productName = nameLocator.innerText().trim();
             }
 
-            // Extract Material Variant
+            // FIX: word-boundary matching so "Black Soft" doesn't false-match a plain
+            // "Soft" check, and vice versa doesn't matter since we check "Black Soft" first.
             String material = "Standard";
             Locator variantLocator = itemRow.locator(".cart-item__option, .product-option, .variant-title, dd, [class*='variant']").first();
             if (variantLocator.count() > 0) {
                 material = variantLocator.innerText().trim();
             } else {
-    Locator detailsLocator = itemRow.locator(".cart-item__details, .cart-item__info, td").first();
-    String detailsText = (detailsLocator.count() > 0 ? detailsLocator : itemRow).innerText();
-    // Word-boundary match so "Hardcase"-style product names don't false-positive.
-    if (Pattern.compile("\\bHard\\b", Pattern.CASE_INSENSITIVE).matcher(detailsText).find()) {
-        material = "Hard";
-    } else if (Pattern.compile("\\bSoft\\b", Pattern.CASE_INSENSITIVE).matcher(detailsText).find()) {
-        material = "Soft";
-    } else if (Pattern.compile("\\bGlass\\b", Pattern.CASE_INSENSITIVE).matcher(detailsText).find()) {
-        material = "Glass";
-    }
-}
+                Locator detailsLocator = itemRow.locator(".cart-item__details, .cart-item__info, td").first();
+                String detailsText = (detailsLocator.count() > 0 ? detailsLocator : itemRow).innerText();
+                if (Pattern.compile("\\bBlack\\s+Soft\\b", Pattern.CASE_INSENSITIVE).matcher(detailsText).find()) {
+                    material = "Black Soft";
+                } else if (Pattern.compile("\\bHard\\b", Pattern.CASE_INSENSITIVE).matcher(detailsText).find()) {
+                    material = "Hard";
+                } else if (Pattern.compile("\\bMetal\\b", Pattern.CASE_INSENSITIVE).matcher(detailsText).find()) {
+                    material = "Metal";
+                } else if (Pattern.compile("\\bGlass\\b", Pattern.CASE_INSENSITIVE).matcher(detailsText).find()) {
+                    material = "Glass";
+                } else if (Pattern.compile("\\bSoft\\b", Pattern.CASE_INSENSITIVE).matcher(detailsText).find()) {
+                    material = "Soft";
+                }
+            }
 
-            // Extract Price
             String price = "₹0";
             Locator priceLocator = itemRow.locator(".cart-item__price, .price, .cart-item__discounted-prices, [class*='price']").first();
             if (priceLocator.count() > 0) {
                 price = priceLocator.innerText().trim();
             }
 
-            // Extract Product Link
             String productLink = page.url();
             Locator linkLocator = itemRow.locator("a[href*='/products/']").first();
             if (linkLocator.count() > 0) {
@@ -128,21 +128,21 @@ public class CartPage extends BasePage {
         List<CartItem> cartItems = getCartItems();
         Assertions.assertFalse(cartItems.isEmpty(), "Cart is empty, cannot validate product consistency!");
 
-        String referenceName = baseProductName != null && !baseProductName.isEmpty() 
-                ? baseProductName 
+        String referenceName = baseProductName != null && !baseProductName.isEmpty()
+                ? baseProductName
                 : cartItems.get(0).getProductName();
-        
+
         String cleanReference = referenceName.replaceAll("(?i)(hard|soft|glass|case|cover|back cover)", "").trim().toLowerCase();
 
         for (int i = 0; i < cartItems.size(); i++) {
             String itemProductName = cartItems.get(i).getProductName();
             String cleanItem = itemProductName.replaceAll("(?i)(hard|soft|glass|case|cover|back cover)", "").trim().toLowerCase();
-            
+
             System.out.println("DEBUG: Validating Cart Item " + (i + 1) + ": '" + itemProductName + "' against reference: '" + referenceName + "'");
-            
-            boolean matches = cleanReference.contains(cleanItem) || cleanItem.contains(cleanReference) 
+
+            boolean matches = cleanReference.contains(cleanItem) || cleanItem.contains(cleanReference)
                     || itemProductName.toLowerCase().contains(cleanReference);
-            
+
             Assertions.assertTrue(matches,
                     "Cart item '" + itemProductName + "' does not belong to parent product '" + referenceName + "'!");
         }
