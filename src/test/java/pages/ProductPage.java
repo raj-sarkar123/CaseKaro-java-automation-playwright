@@ -97,12 +97,18 @@ public class ProductPage extends BasePage {
         boolean foundEligibleProduct = false;
 
         for (int i = 0; i < maxCandidates; i++) {
-            String candidateUrl = candidateUrls.get(i);
-            page.navigate(candidateUrl);
-            page.waitForLoadState();
+    String candidateUrl = candidateUrls.get(i);
 
-            Locator h1 = page.locator("h1, .product__title, .card__heading, .product-title").first();
-            String candidateTitle = (h1.count() > 0 && h1.isVisible()) ? h1.innerText().trim() : candidateUrl;
+    if (candidateUrl.toLowerCase().contains("pro-max")) {
+        System.out.println("Candidate " + (i + 1) + ": " + candidateUrl + " -> skipped (Pro Max variant)");
+        continue;
+    }
+
+    page.navigate(candidateUrl);
+    page.waitForLoadState();
+
+    Locator h1 = page.locator("h1, .product__title, .card__heading, .product-title").first();
+    String candidateTitle = (h1.count() > 0 && h1.isVisible()) ? h1.innerText().trim() : candidateUrl;
 
             // Collect found option texts on this PDP for diagnostic visibility
             Locator optionLabels = page.locator(".f8pr-variant-selection label, fieldset.f8pr-variant-selection label, ul.check.box label, [class*='variant-selection'] label");
@@ -239,13 +245,22 @@ public class ProductPage extends BasePage {
         Assertions.assertTrue(isSelected, "Material variant '" + material + "' is not in selected state!");
     }
 
-    public void addSelectedMaterialToCart() {
-        closePopupsIfPresent();
-        waitForVisible(addToCartBtn);
-        Assertions.assertTrue(addToCartBtn.isVisible() && addToCartBtn.isEnabled(), "Add to Cart button is not interactable!");
-        addToCartBtn.click(new Locator.ClickOptions().setForce(true));
+  public void addSelectedMaterialToCart() {
+    closePopupsIfPresent();
+    waitForVisible(addToCartBtn);
+    Assertions.assertTrue(addToCartBtn.isVisible() && addToCartBtn.isEnabled(), "Add to Cart button is not interactable!");
+
+    String productPageUrl = page.url();
+    addToCartBtn.click(new Locator.ClickOptions().setForce(true));
+    page.waitForLoadState();
+
+    // If "Add to Cart" navigated away to /cart instead of opening a drawer,
+    // go back to the product page so the next material can still be selected.
+    if (!page.url().equals(productPageUrl)) {
+        page.navigate(productPageUrl);
         page.waitForLoadState();
     }
+}
 
     public void closeCartDrawerIfOpen() {
         Locator closeBtn = page.locator(".cart-drawer__close, .drawer__close, button[aria-label*='Close'], .js-drawer-close, [aria-label*='close']").first();

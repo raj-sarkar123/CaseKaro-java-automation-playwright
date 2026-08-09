@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 public class CartPage extends BasePage {
 
@@ -76,16 +77,17 @@ public class CartPage extends BasePage {
             if (variantLocator.count() > 0) {
                 material = variantLocator.innerText().trim();
             } else {
-                Locator detailsLocator = itemRow.locator(".cart-item__details, .cart-item__info, td").first();
-                String detailsText = (detailsLocator.count() > 0 ? detailsLocator : itemRow).innerText();
-                if (detailsText.contains("Hard")) {
-                    material = "Hard";
-                } else if (detailsText.contains("Soft")) {
-                    material = "Soft";
-                } else if (detailsText.contains("Glass")) {
-                    material = "Glass";
-                }
-            }
+    Locator detailsLocator = itemRow.locator(".cart-item__details, .cart-item__info, td").first();
+    String detailsText = (detailsLocator.count() > 0 ? detailsLocator : itemRow).innerText();
+    // Word-boundary match so "Hardcase"-style product names don't false-positive.
+    if (Pattern.compile("\\bHard\\b", Pattern.CASE_INSENSITIVE).matcher(detailsText).find()) {
+        material = "Hard";
+    } else if (Pattern.compile("\\bSoft\\b", Pattern.CASE_INSENSITIVE).matcher(detailsText).find()) {
+        material = "Soft";
+    } else if (Pattern.compile("\\bGlass\\b", Pattern.CASE_INSENSITIVE).matcher(detailsText).find()) {
+        material = "Glass";
+    }
+}
 
             // Extract Price
             String price = "₹0";

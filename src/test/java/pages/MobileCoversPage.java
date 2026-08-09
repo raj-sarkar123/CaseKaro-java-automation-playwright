@@ -122,41 +122,28 @@ public class MobileCoversPage extends BasePage {
                 "Exact suggestion '" + exactModel + "' was not found in autocomplete suggestions!");
     }
 
-    public void verifyPhoneModelMaxNotSelected(String unexpectedModel) {
-        Locator exactMatch = suggestionItems.filter(
-                new Locator.FilterOptions().setHasText(Pattern.compile(".*iPhone 16 Pro.*", Pattern.CASE_INSENSITIVE)));
-        if (exactMatch.count() == 0) {
-            exactMatch = page.locator(
-                    "a[href*='search?q='], .predictive-search a, .autocomplete-suggestions a, div[role='option']")
-                    .filter(new Locator.FilterOptions()
-                            .setHasText(Pattern.compile(".*iPhone 16 Pro.*", Pattern.CASE_INSENSITIVE)));
-        }
-        if (exactMatch.count() > 0) {
-            String selectedText = exactMatch.first().innerText().trim();
-            Assertions.assertNotEquals(unexpectedModel.toLowerCase(), selectedText.toLowerCase(),
-                    "Validation Error: 'iPhone 16 Pro Max' was selected instead of 'iPhone 16 Pro'!");
-        }
-    }
+   public void verifyPhoneModelMaxNotSelected(String unexpectedModel) {
+    // Check what is CURRENTLY selected/loaded, not just what's in the dropdown list.
+    String currentUrl = page.url();
+    String pageHeading = page.locator("h1, .page-title").first().count() > 0
+            ? page.locator("h1, .page-title").first().innerText().trim()
+            : "";
 
-    public void selectExactPhoneModelSuggestion(String exactModel) {
-        verifyExactPhoneModelSuggestionVisible(exactModel);
+    boolean maxWasSelected = currentUrl.toLowerCase().contains("pro-max")
+            || pageHeading.equalsIgnoreCase(unexpectedModel);
 
-        if (modelSearchInput.isVisible()) {
-            modelSearchInput.focus();
-            modelSearchInput.press("Enter");
-        } else {
-            Locator searchLinks = page.locator("a[href*='/search']").filter(new Locator.FilterOptions()
-                    .setHasText(Pattern.compile(".*" + Pattern.quote(exactModel) + ".*", Pattern.CASE_INSENSITIVE)));
-            if (searchLinks.count() > 0 && searchLinks.first().isVisible()) {
-                searchLinks.first().click(new Locator.ClickOptions().setForce(true));
-            } else {
-                Locator matchingSuggestions = suggestionItems
-                        .filter(new Locator.FilterOptions().setHasText(exactModel));
-                if (matchingSuggestions.count() > 0 && matchingSuggestions.first().isVisible()) {
-                    matchingSuggestions.first().click(new Locator.ClickOptions().setForce(true));
-                }
-            }
-        }
-        page.waitForLoadState();
-    }
+    Assertions.assertFalse(maxWasSelected,
+            "Validation Error: 'iPhone 16 Pro Max' was selected instead of 'iPhone 16 Pro'! URL: " + currentUrl);
+}
+
+   public void selectExactPhoneModelSuggestion(String exactModel) {
+    Locator exactSuggestion = suggestionItems.filter(new Locator.FilterOptions()
+            .setHasText(Pattern.compile("^\\s*" + Pattern.quote(exactModel) + "\\s*$", Pattern.CASE_INSENSITIVE)));
+
+    Assertions.assertTrue(exactSuggestion.count() > 0,
+            "Exact suggestion '" + exactModel + "' was not found in the autocomplete dropdown!");
+
+    exactSuggestion.first().click(new Locator.ClickOptions().setForce(true));
+    page.waitForLoadState();
+}
 }
