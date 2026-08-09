@@ -43,7 +43,7 @@ public class BrowserManager {
         );
 
         page = context.newPage();
-        page.setDefaultTimeout(Double.parseDouble(ConfigReader.getProperty("timeout", "45000")));
+        page.setDefaultTimeout(Double.parseDouble(ConfigReader.getProperty("timeout", "30000")));
         page.setDefaultNavigationTimeout(60000);
 
         return page;

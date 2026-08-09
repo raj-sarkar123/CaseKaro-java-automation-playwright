@@ -90,10 +90,8 @@ public class MobileCoversPage extends BasePage {
     }
 
     public void verifyAppleSearchResults() {
-        Assertions.assertTrue(suggestionItems.count() > 0 || autocompleteContainer.isVisible(),
-                "No search autocomplete results appeared for 'Apple'!");
-
-        boolean appleFound = false;
+    boolean appleFound = false;
+    for (int attempt = 0; attempt < 15 && !appleFound; attempt++) {
         int count = suggestionItems.count();
         for (int i = 0; i < count; i++) {
             String text = suggestionItems.nth(i).innerText();
@@ -102,9 +100,13 @@ public class MobileCoversPage extends BasePage {
                 break;
             }
         }
-        Assertions.assertTrue(appleFound || autocompleteContainer.isVisible(),
-                "Search results for 'Apple' did not contain any Apple/iPhone model suggestions!");
+        if (!appleFound) {
+            page.waitForTimeout(400);
+        }
     }
+    Assertions.assertTrue(appleFound || autocompleteContainer.isVisible(),
+            "Search results for 'Apple' did not contain any Apple/iPhone model suggestions!");
+}
 
     public void verifyNoOtherBrandsVisibleInSearchResults() {
         int count = suggestionItems.count();
@@ -158,27 +160,50 @@ public class MobileCoversPage extends BasePage {
         return -1;
     }
 
-    public void verifyExactPhoneModelSuggestionVisible(String exactModel) {
-        verifyAutocompleteVisible();
+   public void verifyExactPhoneModelSuggestionVisible(String exactModel) {
+    verifyAutocompleteVisible();
 
-        int idx = findSuggestionIndexByText(exactModel, false);
-
-        if (idx == -1) {
-            System.out.println("=== DEBUG: real (non-nav/footer) suggestions currently visible ===");
-            int count = suggestionItems.count();
-            for (int i = 0; i < count; i++) {
-                Locator item = suggestionItems.nth(i);
-                if (!item.isVisible()) continue;
-                Object insideChrome = item.evaluate("el => !!el.closest('header, nav, footer')");
-                if (Boolean.TRUE.equals(insideChrome)) continue;
-                System.out.println("  [" + i + "] " + item.innerText().replaceAll("\\s+", " ").trim());
-            }
+    int idx = -1;
+    for (int attempt = 0; attempt < 15; attempt++) {
+        idx = findSuggestionIndexByText(exactModel, false);
+        if (idx != -1) {
+            break;
         }
-
-        Assertions.assertTrue(idx != -1,
-                "Exact suggestion '" + exactModel + "' was not found among real (non-navigation) suggestions!");
+        page.waitForTimeout(400);
     }
 
+    if (idx == -1) {
+        System.out.println("=== DEBUG: real (non-nav/footer) suggestions currently visible ===");
+        int count = suggestionItems.count();
+        for (int i = 0; i < count; i++) {
+            Locator item = suggestionItems.nth(i);
+            if (!item.isVisible()) continue;
+            Object insideChrome = item.evaluate("el => !!el.closest('header, nav, footer')");
+            if (Boolean.TRUE.equals(insideChrome)) continue;
+            System.out.println("  [" + i + "] " + item.innerText().replaceAll("\\s+", " ").trim());
+        }
+    }
+
+    Assertions.assertTrue(idx != -1,
+            "Exact suggestion '" + exactModel + "' was not found among real (non-navigation) suggestions!");
+}
+
+public void selectExactPhoneModelSuggestion(String exactModel) {
+    int idx = -1;
+    for (int attempt = 0; attempt < 15; attempt++) {
+        idx = findSuggestionIndexByText(exactModel, true);
+        if (idx != -1) {
+            break;
+        }
+        page.waitForTimeout(400);
+    }
+
+    Assertions.assertTrue(idx != -1,
+            "Exact suggestion '" + exactModel + "' was not found among real (non-navigation) suggestions!");
+
+    suggestionItems.nth(idx).click(new Locator.ClickOptions().setForce(true));
+    page.waitForLoadState();
+}
     public void verifyPhoneModelMaxNotSelected(String unexpectedModel) {
         String currentUrl = page.url();
         String pageHeadingText = page.locator("h1, .page-title").first().count() > 0
@@ -190,15 +215,5 @@ public class MobileCoversPage extends BasePage {
 
         Assertions.assertFalse(maxWasSelected,
                 "Validation Error: 'iPhone 16 Pro Max' was selected instead of 'iPhone 16 Pro'! URL: " + currentUrl);
-    }
-
-    public void selectExactPhoneModelSuggestion(String exactModel) {
-        int idx = findSuggestionIndexByText(exactModel, true);
-
-        Assertions.assertTrue(idx != -1,
-                "Exact suggestion '" + exactModel + "' was not found among real (non-navigation) suggestions!");
-
-        suggestionItems.nth(idx).click(new Locator.ClickOptions().setForce(true));
-        page.waitForLoadState();
     }
 }

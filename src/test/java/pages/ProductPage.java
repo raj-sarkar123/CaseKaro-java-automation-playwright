@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Assertions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
-
+import utils.TestData;
 public class ProductPage extends BasePage {
 
     // Locators
@@ -45,24 +45,33 @@ public class ProductPage extends BasePage {
                 "No product cards found on product listing page!");
     }
 
-    public void clickFirstProductChooseOptions() {
-        selectFirstEligibleProductWithAllMaterials(List.of("Hard", "Soft", "Glass"));
-    }
+   public void clickFirstProductChooseOptions() {
+    selectFirstEligibleProductWithAllMaterials(
+            List.of(TestData.MATERIAL_HARD, TestData.MATERIAL_SOFT, TestData.MATERIAL_GLASS));
+}
 
     private void collectCandidateUrls(List<String> candidateUrls) {
-        Locator cardLinks = page.locator("a[href*='/products/']");
-        int count = cardLinks.count();
-        for (int i = 0; i < count; i++) {
-            String href = cardLinks.nth(i).getAttribute("href");
-            if (href != null && href.contains("/products/")) {
-                String fullUrl = href.startsWith("http") ? href : "https://casekaro.com" + href;
-                String baseUrl = fullUrl.split("\\?")[0];
-                if (!candidateUrls.contains(baseUrl)) {
-                    candidateUrls.add(fullUrl);
-                }
+    Locator cardLinks = page.locator("a[href*='/products/']");
+    int count = cardLinks.count();
+    for (int i = 0; i < count; i++) {
+        String href = cardLinks.nth(i).getAttribute("href");
+        if (href != null && href.contains("/products/")) {
+            String fullUrl = href.startsWith("http") ? href : buildAbsoluteUrl(href);
+            String baseUrl = fullUrl.split("\\?")[0];
+            if (!candidateUrls.contains(baseUrl)) {
+                candidateUrls.add(baseUrl);
             }
         }
     }
+}
+
+private String buildAbsoluteUrl(String relativeHref) {
+    String base = TestData.HOME_URL.endsWith("/")
+            ? TestData.HOME_URL.substring(0, TestData.HOME_URL.length() - 1)
+            : TestData.HOME_URL;
+    String path = relativeHref.startsWith("/") ? relativeHref : "/" + relativeHref;
+    return base + path;
+}
 
     public void selectFirstEligibleProductWithAllMaterials(List<String> requiredMaterials) {
         verifyAtLeastOneProductCardVisible();
@@ -261,22 +270,26 @@ public class ProductPage extends BasePage {
         Assertions.assertTrue(isSelected, "Material variant '" + material + "' is not in selected state!");
     }
 
-    public void addSelectedMaterialToCart() {
-        closePopupsIfPresent();
-        waitForVisible(addToCartBtn);
-        Assertions.assertTrue(addToCartBtn.isVisible() && addToCartBtn.isEnabled(), "Add to Cart button is not interactable!");
+   public void addSelectedMaterialToCart() {
+    closePopupsIfPresent();
+    waitForVisible(addToCartBtn);
+    Assertions.assertTrue(addToCartBtn.isVisible() && addToCartBtn.isEnabled(), "Add to Cart button is not interactable!");
 
-        String productPageUrl = page.url();
-        addToCartBtn.click(new Locator.ClickOptions().setForce(true));
-        page.waitForLoadState();
+    String productPageUrl = page.url();
+    addToCartBtn.click(new Locator.ClickOptions().setForce(true));
+    page.waitForLoadState();
 
-        // FIX: if "Add to Cart" redirected to a full /cart page instead of opening a
-        // drawer, return to the product page so the next material can still be selected.
-        if (!page.url().equals(productPageUrl)) {
-            page.navigate(productPageUrl);
-            page.waitForLoadState();
-        }
-    }
+    // FIX: always reload back to a clean product page after adding to cart.
+    // The AJAX add-to-cart response injects "you may also like" upsell widgets
+    // into the DOM (confirmed via debug dump: cart-upsell-product / f8pr
+    // form-card elements appear post-add). Those widgets can carry their own
+    // variant-selection labels with the same material names, so the next
+    // selectMaterial() call can end up clicking the wrong widget's label if we
+    // don't reset the DOM. A full reload guarantees only the real product's
+    // picker exists for the next selection.
+    page.navigate(productPageUrl);
+    page.waitForLoadState();
+}
 
     public void closeCartDrawerIfOpen() {
         Locator closeBtn = page.locator(".cart-drawer__close, .drawer__close, button[aria-label*='Close'], .js-drawer-close, [aria-label*='close']").first();

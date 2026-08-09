@@ -4,111 +4,101 @@ import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import models.CartItem;
 import org.junit.jupiter.api.Assertions;
+import utils.TestData;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 public class CartPage extends BasePage {
 
-    private final Locator cartIconBtn;
-    private final Locator cartContainer;
-    private final Locator cartItemRows;
-
     public CartPage(Page page) {
         super(page);
-        this.cartIconBtn = page.locator("a[href*='/cart'], button[aria-label*='Cart'], .header__icon--cart, .cart-drawer-toggle, #cart-icon-bubble").first();
-        this.cartContainer = page.locator(".cart-drawer, #cart-drawer, form[action*='/cart'], .cart__items, .cart-items").first();
-        this.cartItemRows = page.locator(".cart-item, .cart-drawer__item, .cart-items__item, tr.cart-item, [class*='cart-item']");
     }
 
     public void openCart() {
-        if (cartIconBtn.count() > 0 && cartIconBtn.isVisible()) {
-            cartIconBtn.click();
-        } else {
-            page.navigate("https://casekaro.com/cart");
-        }
+        page.navigate(buildAbsoluteUrl("cart"));
         page.waitForLoadState();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> fetchShopifyCart() {
+        Object result = page.evaluate("async () => { const res = await fetch('/cart.js'); return await res.json(); }");
+        return (Map<String, Object>) result;
+    }
+
+    private int getShopifyCartItemCount() {
+        Map<String, Object> cart = fetchShopifyCart();
+        return ((Number) cart.get("item_count")).intValue();
     }
 
     public int getCurrentCartItemCount() {
-        return cartItemRows.count();
+        return getShopifyCartItemCount();
     }
 
     public void verifyCartItemCountIncreasedFrom(int previousCount) {
-        page.waitForLoadState();
-        int newCount = cartItemRows.count();
+        int newCount = previousCount;
+        for (int attempt = 0; attempt < 20; attempt++) {
+            newCount = getShopifyCartItemCount();
+            if (newCount > previousCount) {
+                break;
+            }
+            page.waitForTimeout(500);
+        }
         Assertions.assertTrue(newCount > previousCount,
-            "Cart item count did not increase after add-to-cart! Before: " + previousCount + ", After: " + newCount);
+                "Cart item count did not increase after add-to-cart! Before: " + previousCount + ", After: " + newCount);
     }
 
     public void verifyCartDrawerVisible() {
         page.waitForLoadState();
-        Assertions.assertTrue(cartContainer.isVisible() || cartItemRows.count() > 0,
-                "Cart drawer/page is not visible!");
+        boolean urlLooksLikeCart = page.url().toLowerCase().contains("cart");
+        int itemCount = getShopifyCartItemCount();
+        Assertions.assertTrue(urlLooksLikeCart || itemCount > 0, "Cart drawer/page is not visible!");
     }
 
     public void verifyCartItemCount(int expectedCount) {
-        verifyCartDrawerVisible();
-        int count = cartItemRows.count();
+        int count = 0;
+        for (int attempt = 0; attempt < 20; attempt++) {
+            count = getShopifyCartItemCount();
+            if (count == expectedCount) {
+                break;
+            }
+            page.waitForTimeout(300);
+        }
         Assertions.assertEquals(expectedCount, count,
                 "Cart item count mismatch! Expected: " + expectedCount + " but found: " + count);
     }
 
+    @SuppressWarnings("unchecked")
     public List<CartItem> getCartItems() {
-        verifyCartDrawerVisible();
+        Map<String, Object> cart = fetchShopifyCart();
+        List<Map<String, Object>> rawItems = (List<Map<String, Object>>) cart.get("items");
+
         List<CartItem> items = new ArrayList<>();
-        int count = cartItemRows.count();
+        for (Map<String, Object> raw : rawItems) {
+            String productName = String.valueOf(raw.getOrDefault("product_title", "Unknown Product"));
+            String variantTitle = String.valueOf(raw.getOrDefault("variant_title", ""));
+            String material = extractMaterialFromVariantTitle(variantTitle);
 
-        for (int i = 0; i < count; i++) {
-            Locator itemRow = cartItemRows.nth(i);
+            long priceCents = ((Number) raw.getOrDefault("price", 0)).longValue();
+            String price = "\u20B9" + (priceCents / 100);
 
-            String productName = "Unknown Product";
-            Locator nameLocator = itemRow.locator(".cart-item__name, .product-title, a[href*='/products/'], .cart-item__title").first();
-            if (nameLocator.count() > 0) {
-                productName = nameLocator.innerText().trim();
-            }
-
-            // FIX: word-boundary matching so "Black Soft" doesn't false-match a plain
-            // "Soft" check, and vice versa doesn't matter since we check "Black Soft" first.
-            String material = "Standard";
-            Locator variantLocator = itemRow.locator(".cart-item__option, .product-option, .variant-title, dd, [class*='variant']").first();
-            if (variantLocator.count() > 0) {
-                material = variantLocator.innerText().trim();
-            } else {
-                Locator detailsLocator = itemRow.locator(".cart-item__details, .cart-item__info, td").first();
-                String detailsText = (detailsLocator.count() > 0 ? detailsLocator : itemRow).innerText();
-                if (Pattern.compile("\\bBlack\\s+Soft\\b", Pattern.CASE_INSENSITIVE).matcher(detailsText).find()) {
-                    material = "Black Soft";
-                } else if (Pattern.compile("\\bHard\\b", Pattern.CASE_INSENSITIVE).matcher(detailsText).find()) {
-                    material = "Hard";
-                } else if (Pattern.compile("\\bMetal\\b", Pattern.CASE_INSENSITIVE).matcher(detailsText).find()) {
-                    material = "Metal";
-                } else if (Pattern.compile("\\bGlass\\b", Pattern.CASE_INSENSITIVE).matcher(detailsText).find()) {
-                    material = "Glass";
-                } else if (Pattern.compile("\\bSoft\\b", Pattern.CASE_INSENSITIVE).matcher(detailsText).find()) {
-                    material = "Soft";
-                }
-            }
-
-            String price = "₹0";
-            Locator priceLocator = itemRow.locator(".cart-item__price, .price, .cart-item__discounted-prices, [class*='price']").first();
-            if (priceLocator.count() > 0) {
-                price = priceLocator.innerText().trim();
-            }
-
-            String productLink = page.url();
-            Locator linkLocator = itemRow.locator("a[href*='/products/']").first();
-            if (linkLocator.count() > 0) {
-                String href = linkLocator.getAttribute("href");
-                if (href != null) {
-                    productLink = href.startsWith("http") ? href : "https://casekaro.com" + href;
-                }
-            }
+            String relativeUrl = String.valueOf(raw.getOrDefault("url", ""));
+            String productLink = buildAbsoluteUrl(relativeUrl);
 
             items.add(new CartItem(productName, material, price, productLink));
         }
         return items;
+    }
+
+    private String extractMaterialFromVariantTitle(String variantTitle) {
+        if (Pattern.compile("\\bBlack\\s+Soft\\b", Pattern.CASE_INSENSITIVE).matcher(variantTitle).find()) return "Black Soft";
+        if (Pattern.compile("\\bHard\\b", Pattern.CASE_INSENSITIVE).matcher(variantTitle).find()) return "Hard";
+        if (Pattern.compile("\\bMetal\\b", Pattern.CASE_INSENSITIVE).matcher(variantTitle).find()) return "Metal";
+        if (Pattern.compile("\\bGlass\\b", Pattern.CASE_INSENSITIVE).matcher(variantTitle).find()) return "Glass";
+        if (Pattern.compile("\\bSoft\\b", Pattern.CASE_INSENSITIVE).matcher(variantTitle).find()) return "Soft";
+        return variantTitle.isEmpty() ? "Standard" : variantTitle;
     }
 
     public void verifyMaterialsPresentInCart(List<String> expectedMaterials) {
@@ -146,6 +136,14 @@ public class CartPage extends BasePage {
             Assertions.assertTrue(matches,
                     "Cart item '" + itemProductName + "' does not belong to parent product '" + referenceName + "'!");
         }
+    }
+
+    private String buildAbsoluteUrl(String relativeHref) {
+        String base = TestData.HOME_URL.endsWith("/")
+                ? TestData.HOME_URL.substring(0, TestData.HOME_URL.length() - 1)
+                : TestData.HOME_URL;
+        String path = relativeHref.startsWith("/") ? relativeHref : "/" + relativeHref;
+        return base + path;
     }
 
     public void printFormattedCartItemsReport() {

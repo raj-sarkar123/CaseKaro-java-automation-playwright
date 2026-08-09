@@ -26,16 +26,25 @@ public class ConfigReader {
         return temp;
     }
 
-    public static String getProperty(String key) {
-        return properties.getProperty(key);
-    }
+   public static String getProperty(String key) {
+    String systemValue = System.getProperty(key);
+    return systemValue != null ? systemValue : properties.getProperty(key);
+}
 
-    public static String getProperty(String key, String defaultValue) {
-        return properties.getProperty(key, defaultValue);
+public static String getProperty(String key, String defaultValue) {
+    String systemValue = System.getProperty(key);
+    if (systemValue != null) {
+        return systemValue;
     }
+    return properties.getProperty(key, defaultValue);
+}
 
-    public static boolean getBooleanProperty(String key, boolean defaultValue) {
-        String value = properties.getProperty(key);
-        return value != null ? Boolean.parseBoolean(value) : defaultValue;
+public static boolean getBooleanProperty(String key, boolean defaultValue) {
+    String systemValue = System.getProperty(key);
+    if (systemValue != null) {
+        return Boolean.parseBoolean(systemValue);
     }
+    String value = properties.getProperty(key);
+    return value != null ? Boolean.parseBoolean(value) : defaultValue;
+}
 }
