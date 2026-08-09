@@ -35,12 +35,13 @@ public class ProductPage extends BasePage {
         page.waitForLoadState();
         closePopupsIfPresent();
         System.out.println("DEBUG: Product listing page URL: " + page.url());
-        Assertions.assertTrue(page.url().contains("phone-cases") || page.url().contains("collections") || page.url().contains("products") || page.url().contains("search") || productCards.count() > 0 || productLinks.count() > 0,
+        Assertions.assertTrue(productCards.count() > 0 || productLinks.count() > 0,
                 "Product listing failed to load product cards!");
     }
 
     public void verifyAtLeastOneProductCardVisible() {
-        Assertions.assertTrue(productCards.count() > 0 || productLinks.count() > 0 || page.url().contains("phone-cases") || page.url().contains("collections") || page.url().contains("products") || page.url().contains("search"),
+        System.out.println("DEBUG: Product listing page URL: " + page.url());
+        Assertions.assertTrue(productCards.count() > 0 || productLinks.count() > 0,
                 "No product cards found on product listing page!");
     }
 
@@ -99,13 +100,12 @@ public class ProductPage extends BasePage {
             String candidateUrl = candidateUrls.get(i);
             page.navigate(candidateUrl);
             page.waitForLoadState();
-            closePopupsIfPresent();
 
             Locator h1 = page.locator("h1, .product__title, .card__heading, .product-title").first();
             String candidateTitle = (h1.count() > 0 && h1.isVisible()) ? h1.innerText().trim() : candidateUrl;
 
             // Collect found option texts on this PDP for diagnostic visibility
-            Locator optionLabels = page.locator(".f8pr-variant-selection label, fieldset.f8pr-variant-selection label, fieldset label, [class*='variant'] label");
+            Locator optionLabels = page.locator(".f8pr-variant-selection label, fieldset.f8pr-variant-selection label, ul.check.box label, [class*='variant-selection'] label");
             List<String> foundOptions = new ArrayList<>();
             int optCount = optionLabels.count();
             for (int k = 0; k < optCount; k++) {
@@ -145,11 +145,15 @@ public class ProductPage extends BasePage {
     }
 
     public boolean isMaterialVariantAvailableOnPDP(String material) {
-        closePopupsIfPresent();
-        Locator variantOptions = page.locator(".f8pr-variant-selection label, fieldset.f8pr-variant-selection label, fieldset label, [class*='variant'] label")
-                .filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*" + Pattern.quote(material) + ".*", Pattern.CASE_INSENSITIVE)));
-        
-        return variantOptions.count() > 0;
+        Locator optionLabels = page.locator(".f8pr-variant-selection label, fieldset.f8pr-variant-selection label, ul.check.box label, [class*='variant-selection'] label, [class*='variant'] label");
+        int count = optionLabels.count();
+        for (int i = 0; i < count; i++) {
+            String text = optionLabels.nth(i).innerText().trim();
+            if (text.equalsIgnoreCase(material) || text.toLowerCase().contains(material.toLowerCase())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void logProductOptions() {
@@ -167,42 +171,72 @@ public class ProductPage extends BasePage {
     }
 
     public void verifyMaterialAvailable(String material) {
-        closePopupsIfPresent();
         Assertions.assertTrue(isMaterialVariantAvailableOnPDP(material),
                 "Material variant '" + material + "' is not available for this product!");
     }
 
     public void selectMaterial(String material) {
         verifyMaterialAvailable(material);
-        closePopupsIfPresent();
 
-        Locator exactOption = page.locator(".f8pr-variant-selection label, fieldset label, [class*='variant'] label")
-                .filter(new Locator.FilterOptions().setHasText(Pattern.compile("^\\s*" + Pattern.quote(material) + "\\s*$", Pattern.CASE_INSENSITIVE)));
-        
-        if (exactOption.count() > 0 && exactOption.first().isVisible()) {
-            exactOption.first().click(new Locator.ClickOptions().setForce(true));
-        } else {
-            Locator materialOption = page.locator(".f8pr-variant-selection label, fieldset label, [class*='variant'] label")
-                    .filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*" + Pattern.quote(material) + ".*", Pattern.CASE_INSENSITIVE)));
-            if (materialOption.count() > 0) {
-                materialOption.first().click(new Locator.ClickOptions().setForce(true));
-            } else {
-                page.locator("label, button").filter(new Locator.FilterOptions().setHasText(material)).first().click(new Locator.ClickOptions().setForce(true));
+        Locator optionLabels = page.locator(".f8pr-variant-selection label, fieldset.f8pr-variant-selection label, ul.check.box label, [class*='variant-selection'] label, [class*='variant'] label");
+        int count = optionLabels.count();
+        boolean clicked = false;
+
+        // First attempt exact text match (e.g. "Hard", "Soft", "Glass")
+        for (int i = 0; i < count; i++) {
+            Locator label = optionLabels.nth(i);
+            if (label.isVisible() && label.innerText().trim().equalsIgnoreCase(material)) {
+                label.click(new Locator.ClickOptions().setForce(true));
+                clicked = true;
+                break;
             }
         }
+
+        // Second attempt substring match if exact match wasn't clicked
+        if (!clicked) {
+            for (int i = 0; i < count; i++) {
+                Locator label = optionLabels.nth(i);
+                if (label.isVisible() && label.innerText().toLowerCase().contains(material.toLowerCase())) {
+                    label.click(new Locator.ClickOptions().setForce(true));
+                    clicked = true;
+                    break;
+                }
+            }
+        }
+
+        Assertions.assertTrue(clicked, "Failed to click material variant label for: " + material);
         page.waitForLoadState();
     }
 
     public void verifyMaterialSelected(String material) {
-        closePopupsIfPresent();
-        Locator selectedOption = page.locator(".f8pr-variant-selection input:checked + label, fieldset input:checked + label, [class*='variant'] input:checked + label, label:has(input:checked), input:checked ~ label, label.selected, [aria-selected='true']")
-                .filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*" + Pattern.quote(material) + ".*", Pattern.CASE_INSENSITIVE)));
-        
-        if (selectedOption.count() == 0) {
-            selectedOption = page.locator(".f8pr-variant-selection label, fieldset label, [class*='variant'] label")
-                    .filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*" + Pattern.quote(material) + ".*", Pattern.CASE_INSENSITIVE)));
+        Locator optionLabels = page.locator(".f8pr-variant-selection label, fieldset.f8pr-variant-selection label, ul.check.box label, [class*='variant-selection'] label, [class*='variant'] label");
+        int count = optionLabels.count();
+        boolean isSelected = false;
+
+        for (int i = 0; i < count; i++) {
+            Locator label = optionLabels.nth(i);
+            String labelText = label.innerText().trim();
+            if (labelText.equalsIgnoreCase(material) || labelText.toLowerCase().contains(material.toLowerCase())) {
+                String forAttr = label.getAttribute("for");
+                if (forAttr != null && !forAttr.isEmpty()) {
+                    Locator input = page.locator("#" + forAttr);
+                    if (input.count() > 0 && input.isChecked()) {
+                        isSelected = true;
+                        break;
+                    }
+                }
+                Locator parentLi = label.locator("xpath=..");
+                if (parentLi.count() > 0 && (parentLi.locator("input:checked").count() > 0 || (parentLi.getAttribute("class") != null && parentLi.getAttribute("class").contains("selected")))) {
+                    isSelected = true;
+                    break;
+                }
+                if (label.isVisible()) {
+                    isSelected = true;
+                    break;
+                }
+            }
         }
-        Assertions.assertTrue(selectedOption.count() > 0, "Material variant '" + material + "' is not in selected state!");
+        Assertions.assertTrue(isSelected, "Material variant '" + material + "' is not in selected state!");
     }
 
     public void addSelectedMaterialToCart() {

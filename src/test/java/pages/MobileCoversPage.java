@@ -20,7 +20,7 @@ public class MobileCoversPage extends BasePage {
         this.pageHeading = page.locator("h1, h2, .page-title, [class*='title']").filter(new Locator.FilterOptions().setHasText(Pattern.compile("(Mobile Covers|Phone cases)", Pattern.CASE_INSENSITIVE))).first();
         this.modelSearchInput = page.locator("#search-bar-cover-page, #search_main, input[placeholder*='Search phone model'], input[placeholder*='search'], input[placeholder*='Search'], input[type='search']").first();
         this.autocompleteContainer = page.locator(".autocomplete-suggestions, .search-results, .suggestions, [class*='suggestion'], [class*='search-result'], ul.results, div.results, .search__results, .predictive-search").first();
-        this.suggestionItems = page.locator(".autocomplete-suggestion, .search-result-item, .suggestion-item, [class*='suggestion-item'], ul.results li, div.results a, .search__results-item, a[href*='iphone'], [class*='predictive-search'] li, div[role='option']");
+        this.suggestionItems = page.locator(".autocomplete-suggestion, .search-result-item, .suggestion-item, [class*='suggestion-item'], ul.results li, div.results a, .search__results-item, a[href*='iphone'], [class*='predictive-search'] li, div[role='option'], .predictive-search__item, .predictive-search a, a[href*='search?q=']");
     }
 
     public void verifyMobileCoversPageLoaded() {
@@ -42,15 +42,18 @@ public class MobileCoversPage extends BasePage {
         waitForVisible(modelSearchInput);
         modelSearchInput.click();
         modelSearchInput.fill(brandOrModel);
+        modelSearchInput.dispatchEvent("input");
+        modelSearchInput.dispatchEvent("keyup");
         page.waitForLoadState();
-        if (autocompleteContainer.count() > 0) {
-            autocompleteContainer.first().waitFor(new Locator.WaitForOptions().setState(com.microsoft.playwright.options.WaitForSelectorState.VISIBLE));
+        if (autocompleteContainer.count() > 0 && autocompleteContainer.isVisible()) {
+            autocompleteContainer.waitFor(new Locator.WaitForOptions().setState(com.microsoft.playwright.options.WaitForSelectorState.VISIBLE));
         }
     }
 
     public void clearPhoneModelSearch() {
         waitForVisible(modelSearchInput);
         modelSearchInput.fill("");
+        modelSearchInput.dispatchEvent("input");
         page.waitForLoadState();
     }
 
@@ -89,19 +92,29 @@ public class MobileCoversPage extends BasePage {
     }
 
     public void verifyAutocompleteVisible() {
-        Assertions.assertTrue(suggestionItems.count() > 0 || autocompleteContainer.isVisible() || modelSearchInput.isVisible(),
+        Assertions.assertTrue(suggestionItems.count() > 0 || autocompleteContainer.isVisible(),
                 "Autocomplete dropdown is not visible for search query!");
     }
 
     public void verifyExactPhoneModelSuggestionVisible(String exactModel) {
         verifyAutocompleteVisible();
-        Locator exactSuggestion = suggestionItems.filter(new Locator.FilterOptions().setHasText(exactModel));
-        Assertions.assertTrue(exactSuggestion.count() > 0 || autocompleteContainer.isVisible() || modelSearchInput.isVisible(),
+        Locator exactSuggestion = page.locator(".predictive-search, .autocomplete-suggestions, .search-results, [class*='suggestion'], [class*='predictive-search']")
+                .locator("li, a, div, span, p")
+                .filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*" + Pattern.quote(exactModel) + ".*", Pattern.CASE_INSENSITIVE)));
+        
+        if (exactSuggestion.count() == 0) {
+            exactSuggestion = suggestionItems.filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*" + Pattern.quote(exactModel) + ".*", Pattern.CASE_INSENSITIVE)));
+        }
+        Assertions.assertTrue(exactSuggestion.count() > 0 || autocompleteContainer.isVisible(),
                 "Exact suggestion '" + exactModel + "' was not found in autocomplete suggestions!");
     }
 
     public void verifyPhoneModelMaxNotSelected(String unexpectedModel) {
-        Locator exactMatch = suggestionItems.filter(new Locator.FilterOptions().setHasText(Pattern.compile("^\\s*iPhone 16 Pro\\s*$", Pattern.CASE_INSENSITIVE)));
+        Locator exactMatch = suggestionItems.filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*iPhone 16 Pro.*", Pattern.CASE_INSENSITIVE)));
+        if (exactMatch.count() == 0) {
+            exactMatch = page.locator("a[href*='search?q='], .predictive-search a, .autocomplete-suggestions a, div[role='option']")
+                    .filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*iPhone 16 Pro.*", Pattern.CASE_INSENSITIVE)));
+        }
         if (exactMatch.count() > 0) {
             String selectedText = exactMatch.first().innerText().trim();
             Assertions.assertNotEquals(unexpectedModel.toLowerCase(), selectedText.toLowerCase(),

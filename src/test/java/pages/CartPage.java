@@ -31,9 +31,20 @@ public class CartPage extends BasePage {
         page.waitForLoadState();
     }
 
+    public int getCurrentCartItemCount() {
+        return cartItemRows.count();
+    }
+
+    public void verifyCartItemCountIncreasedFrom(int previousCount) {
+        page.waitForLoadState();
+        int newCount = cartItemRows.count();
+        Assertions.assertTrue(newCount > previousCount,
+            "Cart item count did not increase after add-to-cart! Before: " + previousCount + ", After: " + newCount);
+    }
+
     public void verifyCartDrawerVisible() {
         page.waitForLoadState();
-        Assertions.assertTrue(cartContainer.isVisible() || cartItemRows.count() > 0 || page.url().contains("/cart"),
+        Assertions.assertTrue(cartContainer.isVisible() || cartItemRows.count() > 0,
                 "Cart drawer/page is not visible!");
     }
 
@@ -64,12 +75,16 @@ public class CartPage extends BasePage {
             Locator variantLocator = itemRow.locator(".cart-item__option, .product-option, .variant-title, dd, [class*='variant']").first();
             if (variantLocator.count() > 0) {
                 material = variantLocator.innerText().trim();
-            } else if (itemRow.innerText().contains("Hard")) {
-                material = "Hard";
-            } else if (itemRow.innerText().contains("Soft")) {
-                material = "Soft";
-            } else if (itemRow.innerText().contains("Glass")) {
-                material = "Glass";
+            } else {
+                Locator detailsLocator = itemRow.locator(".cart-item__details, .cart-item__info, td").first();
+                String detailsText = (detailsLocator.count() > 0 ? detailsLocator : itemRow).innerText();
+                if (detailsText.contains("Hard")) {
+                    material = "Hard";
+                } else if (detailsText.contains("Soft")) {
+                    material = "Soft";
+                } else if (detailsText.contains("Glass")) {
+                    material = "Glass";
+                }
             }
 
             // Extract Price

@@ -4,7 +4,7 @@ import java.util.List;
 
 public class TestData {
 
-    public static final String HOME_URL = "https://casekaro.com/";
+    public static final String HOME_URL = ConfigReader.getProperty("baseUrl", "https://casekaro.com/");
     public static final String PHONE_BRAND_SEARCH = "Apple";
     public static final String PHONE_MODEL_SEARCH = "iPhone 16 Pro";
     public static final String UNEXPECTED_MODEL = "iPhone 16 Pro Max";

@@ -153,15 +153,19 @@ public class CaseKaroSteps {
         productPage.verifyMaterialSelected(material);
     }
 
+    private int cartCountBeforeAdd = 0;
+
     @When("I add the selected variant to the cart")
     public void addSelectedVariantToCart() {
         initPages();
+        cartCountBeforeAdd = cartPage.getCurrentCartItemCount();
         productPage.addSelectedMaterialToCart();
     }
 
     @Then("the {string} variant should be added to the cart successfully")
     public void verifyVariantAddedToCart(String material) {
         initPages();
+        cartPage.verifyCartItemCountIncreasedFrom(cartCountBeforeAdd);
         productPage.closeCartDrawerIfOpen();
     }
 
