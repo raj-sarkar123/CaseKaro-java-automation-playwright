@@ -49,14 +49,14 @@ public class MobileCoversPage extends BasePage {
     public void searchPhoneModel(String brandOrModel) {
         waitForVisible(modelSearchInput);
         modelSearchInput.click();
-        modelSearchInput.fill(brandOrModel);
-        modelSearchInput.dispatchEvent("input");
-        modelSearchInput.dispatchEvent("keyup");
-        page.waitForLoadState();
-        if (autocompleteContainer.count() > 0 && autocompleteContainer.isVisible()) {
-            autocompleteContainer.waitFor(new Locator.WaitForOptions()
-                    .setState(com.microsoft.playwright.options.WaitForSelectorState.VISIBLE));
-        }
+        modelSearchInput.fill("");
+        modelSearchInput.pressSequentially(brandOrModel,
+                new Locator.PressSequentiallyOptions().setDelay(120));
+
+        // Wait for the actual suggestion items to render, not just page load state
+        suggestionItems.first().waitFor(new Locator.WaitForOptions()
+                .setState(com.microsoft.playwright.options.WaitForSelectorState.VISIBLE)
+                .setTimeout(10000));
     }
 
     public void clearPhoneModelSearch() {
