@@ -19,7 +19,6 @@ public class MobileCoversPage extends BasePage {
         this.pageHeading = page.locator("h1, h2, .page-title, [class*='title']").filter(new Locator.FilterOptions()
                 .setHasText(Pattern.compile("(Mobile Covers|Phone cases)", Pattern.CASE_INSENSITIVE))).first();
 
-        // Confirmed via live DEBUG run: real input is #search_main.
         this.modelSearchInput = page.locator(
                 "#search_main, #search-bar-cover-page, input[placeholder*='Search phone model'], input[placeholder*='search'], input[placeholder*='Search'], input[type='search']")
                 .first();
@@ -28,13 +27,6 @@ public class MobileCoversPage extends BasePage {
                 ".autocomplete-suggestions, .search-results, .suggestions, [class*='suggestion'], [class*='search-result'], ul.results, div.results, .search__results, .predictive-search, [role='listbox']")
                 .first();
 
-        // Confirmed via live DEBUG run: the site has no dedicated dropdown/container
-        // class we can target ("best-guess results container: NOT FOUND"), so this
-        // stays broad on purpose. It WILL also catch header-nav and footer links whose
-        // href happens to contain "iphone" (confirmed: indices 10, 55-59 in the live
-        // dump were the header "iPhone" nav link and footer "Most searched" links, not
-        // real suggestions). That noise is filtered out in isRealSuggestion() below,
-        // rather than trying to guess a cleaner selector we can't verify.
         this.suggestionItems = page.locator(
                 ".autocomplete-suggestion, .search-result-item, .suggestion-item, [class*='suggestion-item'], " +
                 "ul.results li, div.results a, .search__results-item, a[href*='iphone'], " +
@@ -70,7 +62,6 @@ public class MobileCoversPage extends BasePage {
                 .setState(com.microsoft.playwright.options.WaitForSelectorState.VISIBLE)
                 .setTimeout(10000));
 
-        // Let the debounced results settle so subsequent reads see the final list.
         int previousCount = -1;
         for (int attempt = 0; attempt < 10; attempt++) {
             int currentCount = suggestionItems.count();
@@ -131,16 +122,6 @@ public class MobileCoversPage extends BasePage {
                 "Autocomplete dropdown is not visible for search query!");
     }
 
-    /**
-     * Returns the index into suggestionItems of the first visible, non-nav/footer
-     * item whose normalized text matches targetText — exact match if exactMatch is
-     * true, substring match otherwise. Returns -1 if nothing matches.
-     *
-     * Matching is done in Java against a whitespace-collapsed String rather than via
-     * Playwright's hasText(regex), because a raw-DOM regex silently fails when the
-     * real markup splits the text across nodes (e.g. highlighting spans) — confirmed
-     * this was happening via a live DEBUG run against the real site.
-     */
     private int findSuggestionIndexByText(String targetText, boolean exactMatch) {
         int count = suggestionItems.count();
         for (int i = 0; i < count; i++) {

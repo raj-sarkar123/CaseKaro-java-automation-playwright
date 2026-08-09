@@ -19,14 +19,12 @@
     </properties>
 
     <dependencies>
-        <!-- Playwright for Java -->
         <dependency>
             <groupId>com.microsoft.playwright</groupId>
             <artifactId>playwright</artifactId>
             <version>${playwright.version}</version>
         </dependency>
 
-        <!-- Cucumber Dependencies -->
         <dependency>
             <groupId>io.cucumber</groupId>
             <artifactId>cucumber-java</artifactId>
@@ -40,7 +38,6 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- JUnit Platform Suite for Runner -->
         <dependency>
             <groupId>org.junit.platform</groupId>
             <artifactId>junit-platform-suite</artifactId>
@@ -85,7 +82,6 @@
                     </includes>
                 </configuration>
             </plugin>
-            <!-- ADD THE NEW PLUGIN HERE, right after surefire's closing </plugin> tag -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>

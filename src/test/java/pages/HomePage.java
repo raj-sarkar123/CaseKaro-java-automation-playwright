@@ -7,7 +7,6 @@ import utils.TestData;
 
 public class HomePage extends BasePage {
 
-    // Locators
     private final Locator mobileCoversNavLink;
     private final Locator mainHeader;
 

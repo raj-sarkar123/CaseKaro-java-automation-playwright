@@ -10,7 +10,6 @@ import java.util.regex.Pattern;
 import utils.TestData;
 public class ProductPage extends BasePage {
 
-    // Locators
     private final Locator productCards;
     private final Locator productLinks;
     private final Locator addToCartBtn;
@@ -107,7 +106,6 @@ private String buildAbsoluteUrl(String relativeHref) {
         for (int i = 0; i < maxCandidates; i++) {
             String candidateUrl = candidateUrls.get(i);
 
-            // FIX: never consider a Pro Max product, even if it slipped into the results.
             if (candidateUrl.toLowerCase().contains("pro-max")) {
                 System.out.println("Candidate " + (i + 1) + ": " + candidateUrl + " -> skipped (Pro Max variant)");
                 continue;
@@ -158,14 +156,6 @@ private String buildAbsoluteUrl(String relativeHref) {
         logProductOptions();
     }
 
-    /**
-     * FIX: verified against the live site that option labels include both "Soft" and
-     * "Black Soft" as SEPARATE materials. The old single-pass contains() check could
-     * match "Black Soft" when looking for "Soft" and report a false positive before
-     * ever checking the real "Soft" label. This now does an exact-match pass across
-     * ALL labels first, and only falls back to a substring pass if no exact match
-     * exists anywhere (mirrors the already-correct two-pass logic in selectMaterial()).
-     */
     public boolean isMaterialVariantAvailableOnPDP(String material) {
         Locator optionLabels = page.locator(".f8pr-variant-selection label, fieldset.f8pr-variant-selection label, ul.check.box label, [class*='variant-selection'] label, [class*='variant'] label");
         int count = optionLabels.count();
@@ -264,9 +254,6 @@ private String buildAbsoluteUrl(String relativeHref) {
                 }
             }
         }
-        // FIX: same exact-match-first requirement applies here — an exact "Soft" match
-        // must win over a "Black Soft" match, so we only run the loop once with
-        // equalsIgnoreCase (removed the old .contains() fallback from this method).
         Assertions.assertTrue(isSelected, "Material variant '" + material + "' is not in selected state!");
     }
 
@@ -279,14 +266,6 @@ private String buildAbsoluteUrl(String relativeHref) {
     addToCartBtn.click(new Locator.ClickOptions().setForce(true));
     page.waitForLoadState();
 
-    // FIX: always reload back to a clean product page after adding to cart.
-    // The AJAX add-to-cart response injects "you may also like" upsell widgets
-    // into the DOM (confirmed via debug dump: cart-upsell-product / f8pr
-    // form-card elements appear post-add). Those widgets can carry their own
-    // variant-selection labels with the same material names, so the next
-    // selectMaterial() call can end up clicking the wrong widget's label if we
-    // don't reset the DOM. A full reload guarantees only the real product's
-    // picker exists for the next selection.
     page.navigate(productPageUrl);
     page.waitForLoadState();
 }

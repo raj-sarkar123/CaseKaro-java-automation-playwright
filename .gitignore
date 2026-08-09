@@ -1,7 +1,4 @@
-# Maven build output
 /target/
-
-# IDE files
 /.idea/
 /*.iml
 .classpath
@@ -9,7 +6,6 @@
 .settings/
 /.vscode/
 
-# Logs and temporary files
 *.log
 *.tmp
 .DS_Store
