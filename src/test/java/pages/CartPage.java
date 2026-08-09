@@ -32,7 +32,7 @@ public class CartPage extends BasePage {
     }
 
     public void verifyCartDrawerVisible() {
-        page.waitForTimeout(1000);
+        page.waitForLoadState();
         Assertions.assertTrue(cartContainer.isVisible() || cartItemRows.count() > 0 || page.url().contains("/cart"),
                 "Cart drawer/page is not visible!");
     }

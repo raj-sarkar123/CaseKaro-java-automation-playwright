@@ -42,13 +42,16 @@ public class MobileCoversPage extends BasePage {
         waitForVisible(modelSearchInput);
         modelSearchInput.click();
         modelSearchInput.fill(brandOrModel);
-        page.waitForTimeout(1000);
+        page.waitForLoadState();
+        if (autocompleteContainer.count() > 0) {
+            autocompleteContainer.first().waitFor(new Locator.WaitForOptions().setState(com.microsoft.playwright.options.WaitForSelectorState.VISIBLE));
+        }
     }
 
     public void clearPhoneModelSearch() {
         waitForVisible(modelSearchInput);
         modelSearchInput.fill("");
-        page.waitForTimeout(500);
+        page.waitForLoadState();
     }
 
     public void verifyAppleSearchResults() {
@@ -109,23 +112,18 @@ public class MobileCoversPage extends BasePage {
     public void selectExactPhoneModelSuggestion(String exactModel) {
         verifyExactPhoneModelSuggestionVisible(exactModel);
 
-        Locator matchingSuggestions = suggestionItems.filter(new Locator.FilterOptions().setHasText(exactModel));
-        
-        boolean clicked = false;
-        int count = matchingSuggestions.count();
-        for (int i = 0; i < count; i++) {
-            Locator item = matchingSuggestions.nth(i);
-            if (item.isVisible()) {
-                scrollToElement(item);
-                item.click(new Locator.ClickOptions().setForce(true));
-                clicked = true;
-                break;
-            }
-        }
-
-        if (!clicked) {
-            if (modelSearchInput.isVisible()) {
-                modelSearchInput.press("Enter");
+        if (modelSearchInput.isVisible()) {
+            modelSearchInput.focus();
+            modelSearchInput.press("Enter");
+        } else {
+            Locator searchLinks = page.locator("a[href*='/search']").filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*" + Pattern.quote(exactModel) + ".*", Pattern.CASE_INSENSITIVE)));
+            if (searchLinks.count() > 0 && searchLinks.first().isVisible()) {
+                searchLinks.first().click(new Locator.ClickOptions().setForce(true));
+            } else {
+                Locator matchingSuggestions = suggestionItems.filter(new Locator.FilterOptions().setHasText(exactModel));
+                if (matchingSuggestions.count() > 0 && matchingSuggestions.first().isVisible()) {
+                    matchingSuggestions.first().click(new Locator.ClickOptions().setForce(true));
+                }
             }
         }
         page.waitForLoadState();

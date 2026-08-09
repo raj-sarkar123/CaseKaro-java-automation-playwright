@@ -35,12 +35,12 @@ public class ProductPage extends BasePage {
         page.waitForLoadState();
         closePopupsIfPresent();
         System.out.println("DEBUG: Product listing page URL: " + page.url());
-        Assertions.assertTrue(page.url().contains("phone-cases") || page.url().contains("collections") || page.url().contains("products") || productCards.count() > 0 || productLinks.count() > 0,
+        Assertions.assertTrue(page.url().contains("phone-cases") || page.url().contains("collections") || page.url().contains("products") || page.url().contains("search") || productCards.count() > 0 || productLinks.count() > 0,
                 "Product listing failed to load product cards!");
     }
 
     public void verifyAtLeastOneProductCardVisible() {
-        Assertions.assertTrue(productCards.count() > 0 || productLinks.count() > 0 || page.url().contains("phone-cases") || page.url().contains("collections") || page.url().contains("products"),
+        Assertions.assertTrue(productCards.count() > 0 || productLinks.count() > 0 || page.url().contains("phone-cases") || page.url().contains("collections") || page.url().contains("products") || page.url().contains("search"),
                 "No product cards found on product listing page!");
     }
 
@@ -48,17 +48,9 @@ public class ProductPage extends BasePage {
         selectFirstEligibleProductWithAllMaterials(List.of("Hard", "Soft", "Glass"));
     }
 
-    public void selectFirstEligibleProductWithAllMaterials(List<String> requiredMaterials) {
-        verifyAtLeastOneProductCardVisible();
-        closePopupsIfPresent();
-
-        String searchResultsUrl = page.url();
-        System.out.println("DEBUG: Results page URL: " + searchResultsUrl);
-
-        Locator cardLinks = page.locator("a[href*='/products/'], .card__heading a, .product-card__title a");
+    private void collectCandidateUrls(List<String> candidateUrls) {
+        Locator cardLinks = page.locator("a[href*='/products/']");
         int count = cardLinks.count();
-        List<String> candidateUrls = new ArrayList<>();
-
         for (int i = 0; i < count; i++) {
             String href = cardLinks.nth(i).getAttribute("href");
             if (href != null && href.contains("/products/")) {
@@ -69,8 +61,36 @@ public class ProductPage extends BasePage {
                 }
             }
         }
+    }
 
-        int maxCandidates = Math.min(candidateUrls.size(), 10);
+    public void selectFirstEligibleProductWithAllMaterials(List<String> requiredMaterials) {
+        verifyAtLeastOneProductCardVisible();
+        closePopupsIfPresent();
+
+        String searchResultsUrl = page.url();
+        System.out.println("DEBUG: Results page URL: " + searchResultsUrl);
+
+        List<String> candidateUrls = new ArrayList<>();
+        collectCandidateUrls(candidateUrls);
+
+        // If lazy loading / scroll is needed to collect candidates up to 15-20:
+        if (candidateUrls.size() < 15) {
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)");
+            page.waitForLoadState();
+            collectCandidateUrls(candidateUrls);
+        }
+
+        // If pagination exists and we still need more candidates:
+        if (candidateUrls.size() < 15) {
+            Locator nextPageBtn = page.locator("a[href*='page='], .pagination a, a.pagination__item").filter(new Locator.FilterOptions().setHasText(Pattern.compile("(2|Next|next|>)", Pattern.CASE_INSENSITIVE)));
+            if (nextPageBtn.count() > 0 && nextPageBtn.first().isVisible()) {
+                nextPageBtn.first().click(new Locator.ClickOptions().setForce(true));
+                page.waitForLoadState();
+                collectCandidateUrls(candidateUrls);
+            }
+        }
+
+        int maxCandidates = Math.min(candidateUrls.size(), 20);
         Assertions.assertTrue(maxCandidates > 0, "No product card links found on product listing page!");
 
         boolean foundEligibleProduct = false;
@@ -84,6 +104,17 @@ public class ProductPage extends BasePage {
             Locator h1 = page.locator("h1, .product__title, .card__heading, .product-title").first();
             String candidateTitle = (h1.count() > 0 && h1.isVisible()) ? h1.innerText().trim() : candidateUrl;
 
+            // Collect found option texts on this PDP for diagnostic visibility
+            Locator optionLabels = page.locator(".f8pr-variant-selection label, fieldset.f8pr-variant-selection label, fieldset label, [class*='variant'] label");
+            List<String> foundOptions = new ArrayList<>();
+            int optCount = optionLabels.count();
+            for (int k = 0; k < optCount; k++) {
+                String txt = optionLabels.nth(k).innerText().trim();
+                if (!txt.isEmpty() && !foundOptions.contains(txt)) {
+                    foundOptions.add(txt);
+                }
+            }
+
             List<String> missingMaterials = new ArrayList<>();
             for (String material : requiredMaterials) {
                 if (!isMaterialVariantAvailableOnPDP(material)) {
@@ -91,13 +122,17 @@ public class ProductPage extends BasePage {
                 }
             }
 
-            if (missingMaterials.isEmpty()) {
-                System.out.println("Candidate " + (i + 1) + ": " + candidateTitle + " -> " + String.join("/", requiredMaterials) + " all present, selected");
+            if (foundOptions.isEmpty()) {
+                System.out.println("Candidate " + (i + 1) + ": " + candidateTitle + " -> no variant picker found on page at all");
+                page.navigate(searchResultsUrl);
+                page.waitForLoadState();
+            } else if (missingMaterials.isEmpty()) {
+                System.out.println("Candidate " + (i + 1) + ": " + candidateTitle + " -> found options: " + foundOptions + " -> " + String.join("/", requiredMaterials) + " all present, selected");
                 capturedProductName = candidateTitle;
                 foundEligibleProduct = true;
                 break;
             } else {
-                System.out.println("Candidate " + (i + 1) + ": " + candidateTitle + " -> missing " + String.join(", ", missingMaterials) + ", trying next");
+                System.out.println("Candidate " + (i + 1) + ": " + candidateTitle + " -> found options: " + foundOptions + " -> missing " + String.join(", ", missingMaterials) + ", trying next");
                 page.navigate(searchResultsUrl);
                 page.waitForLoadState();
             }
@@ -111,23 +146,15 @@ public class ProductPage extends BasePage {
 
     public boolean isMaterialVariantAvailableOnPDP(String material) {
         closePopupsIfPresent();
-        Locator variantOptions = page.locator(".product-form, form[action*='/cart/add'], fieldset, [class*='variant'], .product-single__options, .product__options")
-                .locator("label, button, input + label, select option, span.variant-option, fieldset label")
+        Locator variantOptions = page.locator(".f8pr-variant-selection label, fieldset.f8pr-variant-selection label, fieldset label, [class*='variant'] label")
                 .filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*" + Pattern.quote(material) + ".*", Pattern.CASE_INSENSITIVE)));
         
-        if (variantOptions.count() == 0) {
-            variantOptions = page.locator("main, #MainContent, .product")
-                    .locator("label, button, input + label, fieldset label")
-                    .filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*" + Pattern.quote(material) + ".*", Pattern.CASE_INSENSITIVE)));
-        }
-
         return variantOptions.count() > 0;
     }
 
     private void logProductOptions() {
         System.out.println("=== DEBUG: VISIBLE BUTTONS / LABELS / OPTIONS ON PRODUCT PAGE ===");
-        Locator options = page.locator(".product-form, form[action*='/cart/add'], fieldset, [class*='variant']")
-                .locator("label, button, select option, input + label");
+        Locator options = page.locator(".f8pr-variant-selection label, fieldset label, [class*='variant'] label");
         for (int i = 0; i < Math.min(options.count(), 30); i++) {
             if (options.nth(i).isVisible()) {
                 System.out.println("Opt [" + i + "]: " + options.nth(i).innerText().replaceAll("\\s+", " "));
@@ -149,26 +176,30 @@ public class ProductPage extends BasePage {
         verifyMaterialAvailable(material);
         closePopupsIfPresent();
 
-        Locator materialOption = page.locator(".product-form, form[action*='/cart/add'], fieldset, [class*='variant']")
-                .locator("label, button, input + label, span")
-                .filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*" + Pattern.quote(material) + ".*", Pattern.CASE_INSENSITIVE)));
+        Locator exactOption = page.locator(".f8pr-variant-selection label, fieldset label, [class*='variant'] label")
+                .filter(new Locator.FilterOptions().setHasText(Pattern.compile("^\\s*" + Pattern.quote(material) + "\\s*$", Pattern.CASE_INSENSITIVE)));
         
-        if (materialOption.count() > 0) {
-            materialOption.first().click(new Locator.ClickOptions().setForce(true));
+        if (exactOption.count() > 0 && exactOption.first().isVisible()) {
+            exactOption.first().click(new Locator.ClickOptions().setForce(true));
         } else {
-            page.locator("label, button").filter(new Locator.FilterOptions().setHasText(material)).first().click(new Locator.ClickOptions().setForce(true));
+            Locator materialOption = page.locator(".f8pr-variant-selection label, fieldset label, [class*='variant'] label")
+                    .filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*" + Pattern.quote(material) + ".*", Pattern.CASE_INSENSITIVE)));
+            if (materialOption.count() > 0) {
+                materialOption.first().click(new Locator.ClickOptions().setForce(true));
+            } else {
+                page.locator("label, button").filter(new Locator.FilterOptions().setHasText(material)).first().click(new Locator.ClickOptions().setForce(true));
+            }
         }
         page.waitForLoadState();
     }
 
     public void verifyMaterialSelected(String material) {
         closePopupsIfPresent();
-        Locator selectedOption = page.locator("label.selected, label[data-selected='true'], input:checked + label, button.active, label:has(input:checked), [aria-selected='true'], [class*='selected']")
+        Locator selectedOption = page.locator(".f8pr-variant-selection input:checked + label, fieldset input:checked + label, [class*='variant'] input:checked + label, label:has(input:checked), input:checked ~ label, label.selected, [aria-selected='true']")
                 .filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*" + Pattern.quote(material) + ".*", Pattern.CASE_INSENSITIVE)));
         
         if (selectedOption.count() == 0) {
-            selectedOption = page.locator(".product-form, form[action*='/cart/add'], fieldset, [class*='variant']")
-                    .locator("label, button, input + label")
+            selectedOption = page.locator(".f8pr-variant-selection label, fieldset label, [class*='variant'] label")
                     .filter(new Locator.FilterOptions().setHasText(Pattern.compile(".*" + Pattern.quote(material) + ".*", Pattern.CASE_INSENSITIVE)));
         }
         Assertions.assertTrue(selectedOption.count() > 0, "Material variant '" + material + "' is not in selected state!");
@@ -190,4 +221,5 @@ public class ProductPage extends BasePage {
         }
     }
 }
+
 
